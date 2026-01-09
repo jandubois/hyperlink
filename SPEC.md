@@ -46,6 +46,8 @@ hyperlink [OPTIONS]
 | `--tab <spec>` | Tab specifier: 1-based index, `active`, or `all` | `active` |
 | `--stdout` | Output to stdout instead of clipboard | Off (clipboard) |
 | `--format <fmt>` | Output format: `markdown`, `json` (for `--stdout`) | `markdown` |
+| `--save-data <path>` | Save all browser data to JSON file and exit | |
+| `--mock-data <path>` | Load mock data from JSON instead of querying browsers | |
 | `--help` | Show help message | |
 | `--version` | Show version | |
 
@@ -98,6 +100,34 @@ hyperlink --browser arc
   ]
 }
 ```
+
+### Mock Data Format
+
+The `--save-data` flag exports all browser data to JSON:
+
+```json
+{
+  "browsers": [
+    {
+      "name": "Safari",
+      "windows": [
+        {
+          "index": 1,
+          "name": null,
+          "tabs": [
+            {"index": 1, "title": "Page Title", "url": "https://example.com", "isActive": true}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+When `--mock-data` is specified, the app loads this JSON instead of querying real browsers. This enables:
+- Reproducible integration tests
+- Debugging with consistent browser state
+- Running without accessibility permissions
 
 ### Clipboard Format
 

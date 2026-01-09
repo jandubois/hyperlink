@@ -35,6 +35,7 @@ Sources/Hyperlink/
 │   ├── Preferences.swift     # UserDefaults wrapper
 │   ├── BrowserDetector.swift # Running browser detection
 │   ├── PermissionChecker.swift # Accessibility permission handling
+│   ├── MockDataStore.swift  # Mock data save/load for testing
 │   ├── TestLogger.swift      # Structured test output
 │   └── TestCommandReader.swift # Stdin command reader for tests
 ├── Browsers/
@@ -65,6 +66,25 @@ Browser tab data is fetched via AppleScript using `osascript` subprocess (not NS
 The `--test` flag enables:
 - Structured logging to stderr (`[BROWSER_DATA]`, `[TAB]`, `[READY]`, etc.)
 - Stdin command processing (`wait:100`, `key:down`, `quit`, etc.)
+
+### Mock Data
+For testing and debugging, browser data can be saved and replayed:
+
+```bash
+# Save current browser state to JSON
+hyperlink --save-data ~/snapshot.json
+
+# Load mock data instead of querying real browsers (CLI)
+hyperlink --mock-data ~/snapshot.json --browser safari --stdout
+
+# Load mock data in GUI mode
+hyperlink --mock-data ~/snapshot.json
+```
+
+When `--mock-data` is active:
+- No accessibility permissions required
+- No real browsers need to be running
+- Data comes from the JSON snapshot
 
 ## Testing
 
