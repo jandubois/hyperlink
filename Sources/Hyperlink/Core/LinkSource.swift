@@ -13,7 +13,7 @@ struct TabInfo: Sendable, Codable {
 }
 
 /// Information about a browser window
-struct WindowInfo: Sendable {
+struct WindowInfo: Sendable, Codable {
     let index: Int
     let name: String?
     let tabs: [TabInfo]

@@ -58,6 +58,12 @@ class PickerViewModel: ObservableObject {
         errorMessage = nil
         permissionDenied = false
 
+        // Use mock data if loaded
+        if MockDataStore.isActive {
+            loadFromMockData()
+            return
+        }
+
         // Check for Accessibility permission
         if !PermissionChecker.hasAccessibilityPermission {
             PermissionChecker.promptForAccessibilityIfNeeded()
@@ -129,11 +135,62 @@ class PickerViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// Load browser data from mock data store
+    private func loadFromMockData() {
+        let mockSources = MockDataStore.mockSources()
+        if mockSources.isEmpty {
+            errorMessage = "No browsers in mock data"
+            isLoading = false
+            return
+        }
+
+        var browserDataList: [BrowserData] = []
+
+        for source in mockSources {
+            do {
+                let windows = try source.windowsSync()
+                if !windows.isEmpty {
+                    browserDataList.append(BrowserData(
+                        name: source.name,
+                        icon: source.icon,
+                        windows: windows
+                    ))
+                }
+            } catch {
+                // Mock sources shouldn't fail, but handle gracefully
+            }
+        }
+
+        if browserDataList.isEmpty {
+            errorMessage = "No tabs found in mock data"
+            isLoading = false
+            return
+        }
+
+        browsers = browserDataList
+        selectedBrowserIndex = 0
+
+        // Highlight the active tab, or first tab if no active tab
+        if let activeIndex = filteredTabs.firstIndex(where: { $0.isActive }) {
+            highlightedIndex = activeIndex
+        } else if !filteredTabs.isEmpty {
+            highlightedIndex = 0
+        }
+
+        isLoading = false
+    }
+
     func loadBrowsers() async {
         isLoading = true
         errorMessage = nil
         permissionDenied = false
         defer { isLoading = false }
+
+        // Use mock data if loaded
+        if MockDataStore.isActive {
+            loadFromMockData()
+            return
+        }
 
         // Check for Accessibility permission
         if !PermissionChecker.hasAccessibilityPermission {

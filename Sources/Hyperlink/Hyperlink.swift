@@ -31,14 +31,42 @@ struct Hyperlink: AsyncParsableCommand {
     @Flag(name: .long, help: "Enable test mode: verbose logging and stdin command input")
     var test: Bool = false
 
+    @Option(name: .long, help: "Save all browser data to a JSON file")
+    var saveData: String?
+
+    @Option(name: .long, help: "Load mock data from a JSON file instead of querying browsers")
+    var mockData: String?
+
     mutating func run() async throws {
         // Enable test logging if --test flag is set
         TestLogger.isEnabled = test
 
-        // If no arguments provided (or only --test), launch GUI
-        let shouldLaunchGUI = browser == nil && !stdout &&
-            (CommandLine.arguments.count == 1 ||
-             (CommandLine.arguments.count == 2 && test))
+        // Load mock data if specified
+        if let mockPath = mockData {
+            do {
+                try MockDataStore.load(from: mockPath)
+            } catch {
+                fputs("Error: Failed to load mock data from '\(mockPath)': \(error.localizedDescription)\n", stderr)
+                throw ExitCode(1)
+            }
+        }
+
+        // Handle --save-data: save all browser data and exit
+        if let savePath = saveData {
+            try await saveAllBrowserData(to: savePath)
+            return
+        }
+
+        // If no arguments provided (or only --test/--mock-data), launch GUI
+        let hasOnlyGUICompatibleFlags = browser == nil && !stdout && saveData == nil
+        let argCount = CommandLine.arguments.count
+        let shouldLaunchGUI = hasOnlyGUICompatibleFlags && (
+            argCount == 1 ||
+            (argCount == 2 && test) ||
+            (argCount == 2 && mockData != nil) ||
+            (argCount == 3 && test && mockData != nil) ||
+            (argCount == 4 && test && mockData != nil)
+        )
 
         if shouldLaunchGUI {
             await launchGUIApp(testMode: test)
@@ -62,26 +90,92 @@ struct Hyperlink: AsyncParsableCommand {
         app.run()
     }
 
-    private func runCLI() async throws {
-        // Get the browser source
-        let source: any LinkSource
-        if let browserName = browser {
-            guard let s = BrowserRegistry.source(forCLIName: browserName) else {
-                throw ExitCode(4) // Browser not found
-            }
-            source = s
-        } else {
-            guard let s = BrowserRegistry.frontmostSource() else {
-                fputs("Error: No browser is running\n", stderr)
-                throw ExitCode(4)
-            }
-            source = s
+    private func saveAllBrowserData(to path: String) async throws {
+        var browserDataList: [BrowserSnapshot.BrowserData] = []
+
+        // Get all running browsers
+        let runningBrowsers = BrowserDetector.runningBrowsers()
+        if runningBrowsers.isEmpty {
+            fputs("Error: No browsers running\n", stderr)
+            throw ExitCode(4)
         }
 
-        // Check if browser is running
-        guard source.isRunning else {
-            fputs("Error: \(source.name) is not running\n", stderr)
-            throw ExitCode(4)
+        for browser in runningBrowsers {
+            let source = BrowserRegistry.source(for: browser)
+            guard source.isRunning else { continue }
+
+            do {
+                let windows = try source.windowsSync()
+                if !windows.isEmpty {
+                    browserDataList.append(BrowserSnapshot.BrowserData(
+                        name: source.name,
+                        windows: windows
+                    ))
+                }
+            } catch let error as LinkSourceError {
+                if case .permissionDenied = error {
+                    fputs("Error: \(error.description)\n", stderr)
+                    throw ExitCode(3)
+                }
+                // Skip other errors for individual browsers
+                fputs("Warning: Failed to read \(source.name): \(error.description)\n", stderr)
+            }
+        }
+
+        if browserDataList.isEmpty {
+            fputs("Error: No tabs found in any browser\n", stderr)
+            throw ExitCode(1)
+        }
+
+        let snapshot = BrowserSnapshot(browsers: browserDataList)
+        do {
+            try MockDataStore.save(snapshot, to: path)
+            fputs("Saved \(browserDataList.count) browser(s) to \(path)\n", stderr)
+        } catch {
+            fputs("Error: Failed to save data to '\(path)': \(error.localizedDescription)\n", stderr)
+            throw ExitCode(1)
+        }
+    }
+
+    private func runCLI() async throws {
+        // Get the browser source (use mock if loaded)
+        let source: any LinkSource
+        if MockDataStore.isActive {
+            // Use mock data
+            if let browserName = browser {
+                guard let s = MockDataStore.mockSource(forName: browserName) else {
+                    fputs("Error: Browser '\(browserName)' not found in mock data\n", stderr)
+                    throw ExitCode(4)
+                }
+                source = s
+            } else {
+                // Use first mock source
+                guard let s = MockDataStore.mockSources().first else {
+                    fputs("Error: No browsers in mock data\n", stderr)
+                    throw ExitCode(4)
+                }
+                source = s
+            }
+        } else {
+            // Use real browser
+            if let browserName = browser {
+                guard let s = BrowserRegistry.source(forCLIName: browserName) else {
+                    throw ExitCode(4) // Browser not found
+                }
+                source = s
+            } else {
+                guard let s = BrowserRegistry.frontmostSource() else {
+                    fputs("Error: No browser is running\n", stderr)
+                    throw ExitCode(4)
+                }
+                source = s
+            }
+
+            // Check if browser is running (only for real browsers)
+            guard source.isRunning else {
+                fputs("Error: \(source.name) is not running\n", stderr)
+                throw ExitCode(4)
+            }
         }
 
         // Fetch windows and tabs
