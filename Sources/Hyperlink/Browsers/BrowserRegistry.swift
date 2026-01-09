@@ -35,6 +35,12 @@ enum BrowserRegistry {
         return source(for: browser)
     }
 
+    /// Fetch windows from a browser synchronously
+    static func windowsSync(for browser: BrowserDetector.KnownBrowser) throws -> [WindowInfo] {
+        let browserSource = source(for: browser)
+        return try browserSource.windowsSync()
+    }
+
     /// Fetch all browser instances from all running browsers
     static func allInstances() async throws -> [BrowserInstance] {
         var instances: [BrowserInstance] = []

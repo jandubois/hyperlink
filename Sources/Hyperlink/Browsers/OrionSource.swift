@@ -6,7 +6,7 @@ struct OrionSource: LinkSource {
     let name = "Orion"
     let bundleIdentifier = "com.kagi.kagimacOS"
 
-    func windows() async throws -> [WindowInfo] {
+    func windowsSync() throws -> [WindowInfo] {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -52,7 +52,7 @@ struct OrionSource: LinkSource {
                 set output to ""
                 repeat with c in theText
                     set c to c as text
-                    if c is "\\" then
+                    if c is "\\\\" then
                         set output to output & "\\\\\\\\"
                     else if c is "\\"" then
                         set output to output & "\\\\\\""

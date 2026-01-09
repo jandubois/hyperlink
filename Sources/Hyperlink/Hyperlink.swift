@@ -73,7 +73,7 @@ struct Hyperlink: AsyncParsableCommand {
         // Fetch windows and tabs
         let windows: [WindowInfo]
         do {
-            windows = try await source.windows()
+            windows = try source.windowsSync()
         } catch let error as LinkSourceError {
             fputs("Error: \(error.description)\n", stderr)
             switch error {

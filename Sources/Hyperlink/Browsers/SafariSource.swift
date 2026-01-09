@@ -5,7 +5,7 @@ struct SafariSource: LinkSource {
     let name = "Safari"
     let bundleIdentifier = "com.apple.Safari"
 
-    func windows() async throws -> [WindowInfo] {
+    func windowsSync() throws -> [WindowInfo] {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -51,7 +51,7 @@ struct SafariSource: LinkSource {
                 set output to ""
                 repeat with c in theText
                     set c to c as text
-                    if c is "\\" then
+                    if c is "\\\\" then
                         set output to output & "\\\\\\\\"
                     else if c is "\\"" then
                         set output to output & "\\\\\\""
@@ -111,24 +111,34 @@ struct SafariSource: LinkSource {
 /// Utility for running AppleScript
 enum AppleScriptRunner {
     static func run(_ source: String) throws -> String {
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else {
-            throw LinkSourceError.scriptError("Failed to create script")
+        // Use osascript instead of NSAppleScript to avoid main run loop issues
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
+
+        let pipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw LinkSourceError.scriptError("Failed to run osascript: \(error)")
         }
 
-        let result = script.executeAndReturnError(&error)
+        if process.terminationStatus != 0 {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
 
-        if let error = error {
-            let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-            let errorNumber = error[NSAppleScript.errorNumber] as? Int ?? 0
-
-            // Error -1743 is "not allowed to send Apple events"
-            if errorNumber == -1743 || message.contains("not allowed") {
+            if errorMessage.contains("not allowed") || errorMessage.contains("-1743") {
                 throw LinkSourceError.permissionDenied
             }
-            throw LinkSourceError.scriptError(message)
+            throw LinkSourceError.scriptError(errorMessage.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        return result.stringValue ?? ""
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }

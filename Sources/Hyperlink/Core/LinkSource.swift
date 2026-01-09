@@ -66,7 +66,10 @@ protocol LinkSource: Sendable {
     /// Whether the source application is currently running
     var isRunning: Bool { get }
 
-    /// Fetch all windows and tabs from this source
+    /// Fetch all windows and tabs from this source (synchronous)
+    func windowsSync() throws -> [WindowInfo]
+
+    /// Fetch all windows and tabs from this source (async wrapper)
     func windows() async throws -> [WindowInfo]
 
     /// Fetch windows grouped by profile (for browsers that support profiles)
@@ -86,6 +89,11 @@ extension LinkSource {
         NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == bundleIdentifier
         }
+    }
+
+    // Default async implementation calls the sync method
+    func windows() async throws -> [WindowInfo] {
+        try windowsSync()
     }
 
     // Default implementation for sources that don't support profiles

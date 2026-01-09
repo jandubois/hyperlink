@@ -23,7 +23,7 @@ struct ChromiumSource: LinkSource {
         }
     }
 
-    func windows() async throws -> [WindowInfo] {
+    func windowsSync() throws -> [WindowInfo] {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -71,7 +71,7 @@ struct ChromiumSource: LinkSource {
                 set output to ""
                 repeat with c in theText
                     set c to c as text
-                    if c is "\\" then
+                    if c is "\\\\" then
                         set output to output & "\\\\\\\\"
                     else if c is "\\"" then
                         set output to output & "\\\\\\""

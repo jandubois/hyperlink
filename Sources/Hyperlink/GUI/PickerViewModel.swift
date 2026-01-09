@@ -49,6 +49,80 @@ class PickerViewModel: ObservableObject {
         }
     }
 
+    /// Synchronous version for use when async Tasks aren't running
+    func loadBrowsersSync() {
+        isLoading = true
+        errorMessage = nil
+        permissionDenied = false
+
+        // Check for Accessibility permission
+        if !PermissionChecker.hasAccessibilityPermission {
+            PermissionChecker.promptForAccessibilityIfNeeded()
+            // Brief pause to let user respond
+            Thread.sleep(forTimeInterval: 0.5)
+
+            if !PermissionChecker.hasAccessibilityPermission {
+                permissionDenied = true
+                errorMessage = "Accessibility permission required"
+                isLoading = false
+                return
+            }
+        }
+
+        let runningBrowsers = BrowserDetector.runningBrowsers()
+        if runningBrowsers.isEmpty {
+            errorMessage = "No browsers running"
+            isLoading = false
+            return
+        }
+
+        var browserDataList: [BrowserData] = []
+        var lastError: Error?
+
+        for browser in runningBrowsers {
+            do {
+                let windows = try BrowserRegistry.windowsSync(for: browser)
+                if !windows.isEmpty {
+                    let source = BrowserRegistry.source(for: browser)
+                    browserDataList.append(BrowserData(
+                        name: source.name,
+                        icon: source.icon,
+                        windows: windows
+                    ))
+                }
+            } catch let error as LinkSourceError {
+                if case .permissionDenied = error {
+                    permissionDenied = true
+                    errorMessage = "Accessibility permission required"
+                    isLoading = false
+                    return
+                }
+                lastError = error
+            } catch {
+                lastError = error
+            }
+        }
+
+        if browserDataList.isEmpty {
+            if let error = lastError {
+                errorMessage = "Failed to read tabs: \(error.localizedDescription)"
+            } else {
+                errorMessage = "No tabs found"
+            }
+            isLoading = false
+            return
+        }
+
+        browsers = browserDataList
+        selectedBrowserIndex = 0
+
+        if !filteredTabs.isEmpty {
+            highlightedIndex = 0
+        }
+
+        isLoading = false
+    }
+
     func loadBrowsers() async {
         isLoading = true
         errorMessage = nil

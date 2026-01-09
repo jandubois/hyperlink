@@ -24,6 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create and show the floating panel
         panel = FloatingPanel()
         panel?.show()
+
+        // Load browsers synchronously
+        panel?.viewModel.loadBrowsersSync()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -34,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 /// Floating panel that stays above other windows
 class FloatingPanel: NSPanel {
     private var hostingView: NSHostingView<PickerView>?
-    private var viewModel: PickerViewModel
+    var viewModel: PickerViewModel
 
     init() {
         self.viewModel = PickerViewModel()
@@ -79,11 +82,6 @@ class FloatingPanel: NSPanel {
     }
 
     func show() {
-        // Load browser data
-        Task {
-            await viewModel.loadBrowsers()
-        }
-
         // Center on screen
         center()
 
