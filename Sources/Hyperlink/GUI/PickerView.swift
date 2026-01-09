@@ -4,6 +4,7 @@ import SwiftUI
 struct PickerView: View {
     @ObservedObject var viewModel: PickerViewModel
     let onDismiss: () -> Void
+    @State private var showHelp = false
 
     /// Search field is active when it has text or user activated it with / or click
     private var searchFieldIsActive: Binding<Bool> {
@@ -63,6 +64,15 @@ struct PickerView: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
+
+                // Help button
+                Button(action: { showHelp = true }) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Keyboard shortcuts (?)")
             }
             .padding(.horizontal, 12)
             .padding(.top, viewModel.browsers.count > 1 ? 0 : 12)
@@ -139,6 +149,15 @@ struct PickerView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
         )
+        .overlay {
+            if showHelp {
+                Color.black.opacity(0.3)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture { showHelp = false }
+
+                HelpOverlay(onDismiss: { showHelp = false })
+            }
+        }
         .onAppear {
             setupKeyboardHandling()
         }
@@ -158,11 +177,29 @@ struct PickerView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // Dismiss help on any key
+        if showHelp {
+            showHelp = false
+            return true
+        }
+
         let hasModifier = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
         let hasCmd = event.modifierFlags.contains(.command)
         let hasCtrl = event.modifierFlags.contains(.control)
         let char = event.charactersIgnoringModifiers ?? ""
         let characters = event.characters ?? ""
+
+        // `?` shows help when search is not active
+        if characters == "?" && !hasModifier {
+            let searchIsActive = viewModel.searchFocusRequested || !viewModel.searchText.isEmpty
+            if !searchIsActive {
+                showHelp = true
+                return true
+            }
+            // Search is active, add `?` to search text
+            viewModel.searchText.append("?")
+            return true
+        }
 
         // Cmd+1-9 for browser switching
         if hasCmd,
