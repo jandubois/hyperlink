@@ -171,7 +171,9 @@ class FaviconLoader: ObservableObject {
 
     func load(url: URL) {
         image = FaviconCache.shared.favicon(for: url) { [weak self] loadedImage in
-            self?.image = loadedImage
+            Task { @MainActor in
+                self?.image = loadedImage
+            }
         }
     }
 }

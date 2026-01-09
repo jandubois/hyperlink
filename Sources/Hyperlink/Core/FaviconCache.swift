@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 
 /// Caches favicons fetched from websites
-@MainActor
-class FaviconCache {
+final class FaviconCache: @unchecked Sendable {
     static let shared = FaviconCache()
 
     private var cache: [String: NSImage] = [:]
-    private var inFlight: Set<String> = []
+    private var pendingCallbacks: [String: [@Sendable (NSImage?) -> Void]] = [:]
+    private let lock = NSLock()
     private let session: URLSession
 
     private init() {
@@ -17,49 +17,61 @@ class FaviconCache {
         self.session = URLSession(configuration: config)
     }
 
-    /// Get favicon for a URL, returns cached image or starts fetching
-    /// Returns nil if not cached yet (will notify via callback when ready)
-    func favicon(for url: URL, completion: @escaping @MainActor (NSImage?) -> Void) -> NSImage? {
+    /// Get favicon for a URL, returns cached image or nil if not yet loaded
+    func favicon(for url: URL, completion: @escaping @Sendable (NSImage?) -> Void) -> NSImage? {
         guard let host = url.host else {
-            completion(nil)
+            DispatchQueue.main.async { completion(nil) }
             return nil
         }
+
+        lock.lock()
 
         // Check cache first
         if let cached = cache[host] {
+            lock.unlock()
             return cached
         }
 
-        // Don't start duplicate fetches
-        if inFlight.contains(host) {
+        // Add callback to pending list
+        if pendingCallbacks[host] != nil {
+            pendingCallbacks[host]?.append(completion)
+            lock.unlock()
             return nil
         }
 
-        inFlight.insert(host)
+        // Start new fetch
+        pendingCallbacks[host] = [completion]
+        lock.unlock()
 
         // Fetch from Google's favicon service
         let faviconURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=32")!
 
-        Task {
-            do {
-                let (data, response) = try await session.data(from: faviconURL)
+        let task = session.dataTask(with: faviconURL) { [weak self] data, response, error in
+            guard let self = self else { return }
 
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200,
-                      let image = NSImage(data: data) else {
-                    inFlight.remove(host)
-                    completion(nil)
-                    return
+            var resultImage: NSImage? = nil
+            if error == nil,
+               let data = data,
+               let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 200 {
+                resultImage = NSImage(data: data)
+            }
+
+            self.lock.lock()
+            if let img = resultImage {
+                self.cache[host] = img
+            }
+            let callbacks = self.pendingCallbacks.removeValue(forKey: host) ?? []
+            self.lock.unlock()
+
+            let finalImage = resultImage
+            RunLoop.main.perform {
+                for callback in callbacks {
+                    callback(finalImage)
                 }
-
-                cache[host] = image
-                inFlight.remove(host)
-                completion(image)
-            } catch {
-                inFlight.remove(host)
-                completion(nil)
             }
         }
+        task.resume()
 
         return nil
     }
