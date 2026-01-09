@@ -171,7 +171,8 @@ class FaviconLoader: ObservableObject {
 
     func load(url: URL) {
         image = FaviconCache.shared.favicon(for: url) { [weak self] loadedImage in
-            Task { @MainActor in
+            // Callback is already on main thread via RunLoop.main.perform
+            MainActor.assumeIsolated {
                 self?.image = loadedImage
             }
         }
