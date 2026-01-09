@@ -1,0 +1,74 @@
+{
+  "browsers": [
+    {
+      "name": "Safari",
+      "windows": [
+        {
+          "index": 1,
+          "name": null,
+          "tabs": [
+            {
+              "index": 1,
+              "title": "Apple",
+              "url": "https://www.apple.com/",
+              "isActive": true
+            },
+            {
+              "index": 2,
+              "title": "Google Search",
+              "url": "https://www.google.com/",
+              "isActive": false
+            },
+            {
+              "index": 3,
+              "title": "GitHub - Code hosting",
+              "url": "https://github.com/",
+              "isActive": false
+            },
+            {
+              "index": 4,
+              "title": "Stack Overflow - Developer community",
+              "url": "https://stackoverflow.com/",
+              "isActive": false
+            },
+            {
+              "index": 5,
+              "title": "Hacker News",
+              "url": "https://news.ycombinator.com/",
+              "isActive": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Google Chrome",
+      "windows": [
+        {
+          "index": 1,
+          "name": null,
+          "tabs": [
+            {
+              "index": 1,
+              "title": "Google Docs",
+              "url": "https://docs.google.com/",
+              "isActive": true
+            },
+            {
+              "index": 2,
+              "title": "YouTube - Video sharing",
+              "url": "https://www.youtube.com/",
+              "isActive": false
+            },
+            {
+              "index": 3,
+              "title": "Reddit - The front page",
+              "url": "https://www.reddit.com/",
+              "isActive": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

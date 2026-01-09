@@ -4,8 +4,8 @@
 #
 # Usage: ./scripts/integration-test.sh [test-name]
 #
-# Runs GUI integration tests using the --test mode.
-# Requires at least one browser to be running with some tabs open.
+# Runs GUI integration tests using the --test mode with mock data.
+# Uses test-data.json for reproducible browser/tab state.
 #
 
 set -e
@@ -13,6 +13,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BINARY="$PROJECT_DIR/.build/debug/hyperlink"
+MOCK_DATA="$SCRIPT_DIR/test-data.json"
 TIMEOUT_SEC=5
 
 # Colors for output
@@ -69,7 +70,7 @@ run_gui_test() {
     local exit_code=0
 
     # Run with timeout and capture stderr (where test logs go)
-    output=$(echo "$commands" | timeout "$TIMEOUT_SEC" "$BINARY" --test 2>&1) || exit_code=$?
+    output=$(echo "$commands" | timeout "$TIMEOUT_SEC" "$BINARY" --test --mock-data "$MOCK_DATA" 2>&1) || exit_code=$?
 
     # Timeout exit code is 124
     if [ $exit_code -eq 124 ]; then
@@ -274,7 +275,7 @@ run_tests() {
         unit_tests
         echo ""
         log_info "Running GUI integration tests..."
-        log_info "(Requires at least one browser to be running with tabs)"
+        log_info "(Using mock data from test-data.json)"
         echo ""
 
         test_startup
