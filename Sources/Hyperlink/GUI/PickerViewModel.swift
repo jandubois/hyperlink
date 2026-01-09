@@ -116,7 +116,10 @@ class PickerViewModel: ObservableObject {
         browsers = browserDataList
         selectedBrowserIndex = 0
 
-        if !filteredTabs.isEmpty {
+        // Highlight the active tab, or first tab if no active tab
+        if let activeIndex = filteredTabs.firstIndex(where: { $0.isActive }) {
+            highlightedIndex = activeIndex
+        } else if !filteredTabs.isEmpty {
             highlightedIndex = 0
         }
 
@@ -188,8 +191,10 @@ class PickerViewModel: ObservableObject {
         // Select the first browser (frontmost)
         selectedBrowserIndex = 0
 
-        // Highlight first tab
-        if !filteredTabs.isEmpty {
+        // Highlight the active tab, or first tab if no active tab
+        if let activeIndex = filteredTabs.firstIndex(where: { $0.isActive }) {
+            highlightedIndex = activeIndex
+        } else if !filteredTabs.isEmpty {
             highlightedIndex = 0
         }
     }
