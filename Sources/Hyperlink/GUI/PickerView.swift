@@ -5,13 +5,29 @@ struct PickerView: View {
     @ObservedObject var viewModel: PickerViewModel
     let onDismiss: () -> Void
 
+    /// Search field is active when it has text or user activated it with / or click
+    private var searchFieldIsActive: Binding<Bool> {
+        Binding(
+            get: { !viewModel.searchText.isEmpty || viewModel.searchFocusRequested },
+            set: { newValue in
+                if newValue {
+                    viewModel.searchFocusRequested = true
+                }
+            }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Search field
-            SearchField(text: $viewModel.searchText)
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            SearchField(
+                text: $viewModel.searchText,
+                isActive: searchFieldIsActive,
+                onActivate: { viewModel.searchFocusRequested = true }
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
             // Browser tab bar
             if viewModel.browsers.count > 1 {
@@ -112,9 +128,15 @@ struct PickerView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        let hasModifier = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+        let hasCmd = event.modifierFlags.contains(.command)
+        let hasCtrl = event.modifierFlags.contains(.control)
+        let char = event.charactersIgnoringModifiers ?? ""
+        let characters = event.characters ?? ""
+
         // Cmd+1-9 for browser switching
-        if event.modifierFlags.contains(.command),
-           let number = Int(event.charactersIgnoringModifiers ?? ""),
+        if hasCmd,
+           let number = Int(char),
            number >= 1 && number <= 9 {
             let index = number - 1
             if index < viewModel.browsers.count {
@@ -123,16 +145,34 @@ struct PickerView: View {
             return true
         }
 
-        // 1-9 for tab selection
-        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-           let number = Int(event.charactersIgnoringModifiers ?? ""),
-           number >= 1 && number <= 9 {
-            let index = number - 1
-            if index < viewModel.filteredTabs.count {
-                let tab = viewModel.filteredTabs[index]
-                viewModel.copyAndDismiss(tab: tab)
-                onDismiss()
+        // Ctrl+1-9 OR plain 1-9 (when search is empty and no / pressed) for tab selection
+        if let number = Int(char), number >= 1 && number <= 9 {
+            // Ctrl+1-9 always selects tabs
+            // Plain 1-9 only selects tabs when search is empty and / wasn't pressed
+            let shouldPassToSearch = viewModel.searchFocusRequested || !viewModel.searchText.isEmpty
+            if hasCtrl || (!hasModifier && !shouldPassToSearch) {
+                let index = number - 1
+                if index < viewModel.filteredTabs.count {
+                    let tab = viewModel.filteredTabs[index]
+                    viewModel.copyAndDismiss(tab: tab)
+                    onDismiss()
+                }
+                return true
             }
+            // Append to search field, reset the focus flag
+            viewModel.searchFocusRequested = false
+            viewModel.searchText.append(characters)
+            return true
+        }
+
+        // `/` activates search mode when search is not active, otherwise types into search
+        if char == "/" && !hasModifier {
+            if viewModel.searchText.isEmpty && !viewModel.searchFocusRequested {
+                viewModel.searchFocusRequested = true
+                return true
+            }
+            // Search is already active, add `/` to search text
+            viewModel.searchText.append("/")
             return true
         }
 
@@ -158,12 +198,33 @@ struct PickerView: View {
                 onDismiss()
             }
             return true
-        case 49: // Space
-            if let index = viewModel.highlightedIndex {
-                viewModel.toggleSelection(at: index)
+        case 51: // Delete/Backspace
+            if !viewModel.searchText.isEmpty {
+                viewModel.searchText.removeLast()
             }
             return true
+        case 49: // Space - toggle selection if search is empty, otherwise add to search
+            if viewModel.searchText.isEmpty && !viewModel.searchFocusRequested {
+                if let index = viewModel.highlightedIndex {
+                    viewModel.toggleSelection(at: index)
+                }
+                return true
+            }
+            viewModel.searchText.append(" ")
+            viewModel.searchFocusRequested = false
+            return true
+        case 53: // Escape
+            if !viewModel.searchText.isEmpty {
+                viewModel.searchText = ""
+                return true
+            }
+            return false // Let escape propagate to close window
         default:
+            // Printable characters go to search (without modifiers)
+            if !hasModifier && !characters.isEmpty {
+                viewModel.searchText.append(characters)
+                return true
+            }
             return false
         }
     }

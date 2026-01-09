@@ -13,6 +13,9 @@ class PickerViewModel: ObservableObject {
     @Published var errorMessage: String? = nil
     @Published var permissionDenied: Bool = false
 
+    /// Set to true when `/` is pressed or search field is clicked, causing next digit to go to search
+    @Published var searchFocusRequested: Bool = false
+
     private let preferences = Preferences.shared
 
     struct BrowserData: Identifiable {

@@ -3,16 +3,24 @@ import SwiftUI
 /// Search field for filtering tabs
 struct SearchField: View {
     @Binding var text: String
-    @FocusState private var isFocused: Bool
+    @Binding var isActive: Bool
+    var onActivate: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
+                .foregroundColor(isActive ? .accentColor : .secondary)
 
-            TextField("Filter tabs...", text: $text)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text("Filter tabs...")
+                        .foregroundColor(.secondary)
+                }
+                Text(text)
+                    .foregroundColor(.primary)
+            }
+
+            Spacer()
 
             if !text.isEmpty {
                 Button(action: { text = "" }) {
@@ -26,11 +34,14 @@ struct SearchField: View {
         .padding(.vertical, 8)
         .background(Color.primary.opacity(0.06))
         .cornerRadius(8)
-        .onAppear {
-            // Focus search field on appear
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isFocused = true
-            }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isActive = true
+            onActivate?()
         }
     }
 }

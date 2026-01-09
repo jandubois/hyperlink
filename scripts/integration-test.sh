@@ -157,8 +157,56 @@ test_number_selection() {
     run_gui_test "Number key selection" \
         "wait:100
 key:1" \
-        "[KEY] key=\"1\"
-[RESULT] type=\"copy\""
+        "key=\"1\"
+type=\"copy\""
+}
+
+# Test: Ctrl+number selection works even with search text
+test_ctrl_number_selection() {
+    # Search for "go" which should match most browser tabs (Google, etc.)
+    run_gui_test "Ctrl+number selection with search" \
+        "wait:100
+search:go
+wait:50
+key:ctrl+1" \
+        "name=\"searchText\"
+key=\"ctrl+1\"
+type=\"copy\""
+}
+
+# Test: Slash key activates search focus mode
+test_slash_search() {
+    # Pressing / sets searchFocusRequested
+    run_gui_test "Slash activates search focus" \
+        "wait:100
+key:/
+quit" \
+        "key=\"/\"
+name=\"searchFocusRequested\"
+value=true"
+}
+
+# Test: Second slash adds to search text (not swallowed)
+test_slash_passthrough() {
+    # First / activates, second / should add to search text
+    run_gui_test "Second slash adds to search" \
+        "wait:100
+key:/
+key:/
+quit" \
+        "name=\"searchFocusRequested\"
+name=\"searchText\"
+value=\"/\""
+}
+
+# Test: Clicking search field activates search mode
+test_click_search() {
+    run_gui_test "Click search activates focus" \
+        "wait:100
+focus_search
+quit" \
+        "name=\"searchFocusRequested\"
+value=true"
 }
 
 # Test: Escape dismisses
@@ -184,12 +232,16 @@ run_tests() {
             browser_switch) test_browser_switch ;;
             search) test_search ;;
             number) test_number_selection ;;
+            ctrl_number) test_ctrl_number_selection ;;
+            slash) test_slash_search ;;
+            slash_passthrough) test_slash_passthrough ;;
+            click_search) test_click_search ;;
             escape) test_escape ;;
             unit) unit_tests ;;
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, browser_switch, search, number, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, slash_passthrough, click_search, escape, unit, build"
                 exit 1
                 ;;
         esac
@@ -205,10 +257,14 @@ run_tests() {
         test_startup
         test_browser_data
         test_navigation
-        test_browser_switch  # Note: more meaningful with 2+ browsers running
+        test_browser_switch
         test_search
+        test_number_selection
+        test_ctrl_number_selection
+        test_slash_search
+        test_slash_passthrough
+        test_click_search
         test_escape
-        # test_number_selection  # Skipped by default as it copies to clipboard
     fi
 }
 

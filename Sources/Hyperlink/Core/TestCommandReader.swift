@@ -22,11 +22,17 @@ private class CommandQueue: @unchecked Sendable {
 /// Reads and executes test commands from stdin
 /// Commands:
 /// - wait:<ms>          - Wait for specified milliseconds
-/// - key:<keyname>      - Simulate key press (down, up, return, escape, 1-9, etc.)
+/// - key:<keyname>      - Simulate key press (down, up, return, escape, 1-9, ctrl+1-9, /, etc.)
 /// - click:<row>        - Click on tab row
 /// - search:<text>      - Type in search field
 /// - browser:<index>    - Switch to browser at index
+/// - focus_search       - Simulate clicking the search field (activates search mode)
 /// - quit               - Exit the app
+///
+/// Key notes:
+/// - 1-9 selects tabs only when search is empty and / wasn't pressed
+/// - ctrl+1-9 always selects tabs (even with search text)
+/// - / activates search focus mode when inactive; adds to search text when already active
 @MainActor
 class TestCommandReader: NSObject {
     private var inputThread: Thread?
@@ -103,6 +109,10 @@ class TestCommandReader: NSObject {
                 viewModel?.toggleSelection(at: index)
             }
 
+        case "focus_search", "click_search":
+            viewModel?.searchFocusRequested = true
+            TestLogger.logState("searchFocusRequested", value: true)
+
         case "quit", "exit":
             TestLogger.logResult("quit")
             onDismiss?()
@@ -119,7 +129,9 @@ class TestCommandReader: NSObject {
     private func simulateKey(_ keyName: String) {
         TestLogger.logKeyPress(keyName)
 
-        switch keyName.lowercased() {
+        let key = keyName.lowercased()
+
+        switch key {
         case "down":
             viewModel?.moveHighlight(by: 1)
             TestLogger.logState("highlightedIndex", value: viewModel?.highlightedIndex ?? -1)
@@ -156,27 +168,52 @@ class TestCommandReader: NSObject {
             onDismiss?()
 
         case "space":
-            if let index = viewModel?.highlightedIndex {
-                viewModel?.toggleSelection(at: index)
-                TestLogger.logState("selectedCount", value: viewModel?.selectedTabs.count ?? 0)
+            // Space toggles selection only when search is empty
+            if viewModel?.searchText.isEmpty ?? true {
+                if let index = viewModel?.highlightedIndex {
+                    viewModel?.toggleSelection(at: index)
+                    TestLogger.logState("selectedCount", value: viewModel?.selectedTabs.count ?? 0)
+                }
             }
 
         case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-            if let index = Int(keyName), let tabs = viewModel?.filteredTabs {
-                let tabIndex = index - 1
-                if tabIndex < tabs.count {
-                    let tab = tabs[tabIndex]
-                    viewModel?.copyAndDismiss(tab: tab)
-                    TestLogger.logResult("copy", details: [
-                        "title": tab.title,
-                        "url": tab.url.absoluteString
-                    ])
-                    onDismiss?()
-                }
+            // Plain 1-9 selects tabs only when search is empty
+            if viewModel?.searchText.isEmpty ?? true {
+                selectTab(number: Int(key)!)
+            }
+
+        case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
+             "ctrl+6", "ctrl+7", "ctrl+8", "ctrl+9":
+            // Ctrl+1-9 always selects tabs (even with search text)
+            let number = Int(String(key.last!))!
+            selectTab(number: number)
+
+        case "/", "slash":
+            // `/` activates search focus mode when inactive, otherwise adds to search
+            if viewModel?.searchText.isEmpty ?? true && !(viewModel?.searchFocusRequested ?? false) {
+                viewModel?.searchFocusRequested = true
+                TestLogger.logState("searchFocusRequested", value: true)
+            } else {
+                viewModel?.searchText.append("/")
+                TestLogger.logState("searchText", value: viewModel?.searchText ?? "")
             }
 
         default:
             break
+        }
+    }
+
+    private func selectTab(number: Int) {
+        guard let tabs = viewModel?.filteredTabs else { return }
+        let tabIndex = number - 1
+        if tabIndex < tabs.count {
+            let tab = tabs[tabIndex]
+            viewModel?.copyAndDismiss(tab: tab)
+            TestLogger.logResult("copy", details: [
+                "title": tab.title,
+                "url": tab.url.absoluteString
+            ])
+            onDismiss?()
         }
     }
 
