@@ -112,10 +112,8 @@ struct TabRowView: View {
                     .frame(width: 6)
             }
 
-            // Favicon placeholder
-            Image(systemName: "globe")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
+            // Favicon
+            FaviconView(url: tab.url)
                 .frame(width: 16, height: 16)
 
             // Title
@@ -139,6 +137,41 @@ struct TabRowView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect()
+        }
+    }
+}
+
+/// Displays a favicon for a URL, loading asynchronously
+struct FaviconView: View {
+    let url: URL
+    @StateObject private var loader = FaviconLoader()
+
+    var body: some View {
+        Group {
+            if let image = loader.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+            } else {
+                Image(systemName: "globe")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onAppear {
+            loader.load(url: url)
+        }
+    }
+}
+
+/// Observable loader for favicon images
+@MainActor
+class FaviconLoader: ObservableObject {
+    @Published var image: NSImage?
+
+    func load(url: URL) {
+        image = FaviconCache.shared.favicon(for: url) { [weak self] loadedImage in
+            self?.image = loadedImage
         }
     }
 }
