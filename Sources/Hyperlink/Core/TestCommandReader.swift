@@ -128,6 +128,16 @@ class TestCommandReader: NSObject {
             viewModel?.moveHighlight(by: -1)
             TestLogger.logState("highlightedIndex", value: viewModel?.highlightedIndex ?? -1)
 
+        case "left":
+            viewModel?.switchBrowser(by: -1)
+            TestLogger.logState("selectedBrowserIndex", value: viewModel?.selectedBrowserIndex ?? -1)
+            TestLogger.logState("highlightedIndex", value: viewModel?.highlightedIndex ?? -1)
+
+        case "right":
+            viewModel?.switchBrowser(by: 1)
+            TestLogger.logState("selectedBrowserIndex", value: viewModel?.selectedBrowserIndex ?? -1)
+            TestLogger.logState("highlightedIndex", value: viewModel?.highlightedIndex ?? -1)
+
         case "return", "enter":
             if let index = viewModel?.highlightedIndex,
                let tabs = viewModel?.filteredTabs,

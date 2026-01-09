@@ -215,6 +215,30 @@ class PickerViewModel: ObservableObject {
         highlightedIndex = newIndex
     }
 
+    func switchBrowser(by delta: Int) {
+        guard browsers.count > 1 else { return }
+
+        var newIndex = selectedBrowserIndex + delta
+        if newIndex < 0 {
+            newIndex = browsers.count - 1
+        } else if newIndex >= browsers.count {
+            newIndex = 0
+        }
+
+        selectedBrowserIndex = newIndex
+        highlightActiveTab()
+    }
+
+    func highlightActiveTab() {
+        if let activeIndex = filteredTabs.firstIndex(where: { $0.isActive }) {
+            highlightedIndex = activeIndex
+        } else if !filteredTabs.isEmpty {
+            highlightedIndex = 0
+        } else {
+            highlightedIndex = nil
+        }
+    }
+
     func toggleSelection(at index: Int) {
         guard index < filteredTabs.count else { return }
         let tab = filteredTabs[index]

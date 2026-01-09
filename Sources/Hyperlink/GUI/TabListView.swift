@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Scrollable list of tabs grouped by window
 struct TabListView: View {
+    let browserIndex: Int  // Used to force view refresh when browser changes
     let windows: [WindowInfo]
     let filteredTabs: [TabInfo]
     @Binding var selectedTabs: Set<PickerViewModel.TabIdentifier>
@@ -12,7 +13,7 @@ struct TabListView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(filteredTabs.enumerated()), id: \.element.url) { index, tab in
+                    ForEach(Array(filteredTabs.enumerated()), id: \.offset) { index, tab in
                         TabRowView(
                             tab: tab,
                             index: index,
@@ -21,7 +22,6 @@ struct TabListView: View {
                             onToggleCheck: { toggleSelection(tab) },
                             onSelect: { onSelect(tab) }
                         )
-                        .id(index)
                     }
                 }
                 .padding(.vertical, 4)
@@ -34,6 +34,7 @@ struct TabListView: View {
                 }
             }
         }
+        .id(browserIndex)  // Force complete refresh when browser changes
     }
 
     private func isTabSelected(_ tab: TabInfo) -> Bool {

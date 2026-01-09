@@ -1,7 +1,39 @@
 import AppKit
+import CoreGraphics
 
 /// Detects running browsers and determines the frontmost one
 enum BrowserDetector {
+    /// Cache the frontmost browser at launch (before our window takes focus)
+    nonisolated(unsafe) private static var cachedFrontmostBrowser: KnownBrowser?
+    nonisolated(unsafe) private static var hasCachedFrontmost = false
+
+    /// Call this early at launch to capture the frontmost browser
+    static func captureFrontmostBrowser() {
+        guard !hasCachedFrontmost else { return }
+        hasCachedFrontmost = true
+        cachedFrontmostBrowser = detectFrontmostBrowser()
+    }
+
+    private static func detectFrontmostBrowser() -> KnownBrowser? {
+        // Use CGWindowListCopyWindowInfo to get actual window z-order
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+
+        // Find the first browser window in z-order (frontmost first)
+        for windowInfo in windowList {
+            guard let ownerPID = windowInfo[kCGWindowOwnerPID as String] as? pid_t else { continue }
+
+            if let app = NSRunningApplication(processIdentifier: ownerPID),
+               let bundleId = app.bundleIdentifier,
+               let browser = KnownBrowser.allCases.first(where: { $0.rawValue == bundleId }) {
+                return browser
+            }
+        }
+
+        return nil
+    }
+
     /// Known browser bundle identifiers
     enum KnownBrowser: String, CaseIterable {
         case safari = "com.apple.Safari"
@@ -31,35 +63,21 @@ enum BrowserDetector {
     static func runningBrowsers() -> [KnownBrowser] {
         let runningApps = NSWorkspace.shared.runningApplications
 
-        // Get the order of apps by their activation time/z-order
-        // The frontmost app appears first in the ordering
-        let orderedBundleIds = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .sorted { app1, app2 in
-                // frontmostApplication is a single app, so we check if each is it
-                if app1 == NSWorkspace.shared.frontmostApplication { return true }
-                if app2 == NSWorkspace.shared.frontmostApplication { return false }
-                // For other apps, maintain their order (which is roughly by recency)
-                return false
-            }
-            .compactMap { $0.bundleIdentifier }
-
-        // Filter to only known browsers and maintain z-order
-        var result: [KnownBrowser] = []
-        for bundleId in orderedBundleIds {
-            if let browser = KnownBrowser.allCases.first(where: { $0.rawValue == bundleId }) {
-                result.append(browser)
-            }
-        }
-
-        // Add any running browsers that might not be in the ordered list
+        // Get all running browsers
+        var browsers: [KnownBrowser] = []
         for browser in KnownBrowser.allCases {
-            if !result.contains(browser) && runningApps.contains(where: { $0.bundleIdentifier == browser.rawValue }) {
-                result.append(browser)
+            if runningApps.contains(where: { $0.bundleIdentifier == browser.rawValue }) {
+                browsers.append(browser)
             }
         }
 
-        return result
+        // Put the cached frontmost browser first
+        if let frontmost = cachedFrontmostBrowser, browsers.contains(frontmost) {
+            browsers.removeAll { $0 == frontmost }
+            browsers.insert(frontmost, at: 0)
+        }
+
+        return browsers
     }
 
     /// Get the frontmost browser, if any

@@ -50,6 +50,9 @@ struct Hyperlink: AsyncParsableCommand {
 
     @MainActor
     private func launchGUIApp(testMode: Bool) {
+        // Capture the frontmost browser before our window takes focus
+        BrowserDetector.captureFrontmostBrowser()
+
         // Launch the GUI application
         let app = NSApplication.shared
         let delegate = AppDelegate()

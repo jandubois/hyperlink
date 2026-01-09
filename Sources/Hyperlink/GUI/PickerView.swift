@@ -62,6 +62,7 @@ struct PickerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 TabListView(
+                    browserIndex: viewModel.selectedBrowserIndex,
                     windows: viewModel.currentWindows,
                     filteredTabs: viewModel.filteredTabs,
                     selectedTabs: $viewModel.selectedTabs,
@@ -95,6 +96,9 @@ struct PickerView: View {
         )
         .onAppear {
             setupKeyboardHandling()
+        }
+        .onChange(of: viewModel.selectedBrowserIndex) { _, _ in
+            viewModel.highlightActiveTab()
         }
     }
 
@@ -139,6 +143,12 @@ struct PickerView: View {
             return true
         case 126: // Up arrow
             viewModel.moveHighlight(by: -1)
+            return true
+        case 123: // Left arrow
+            viewModel.switchBrowser(by: -1)
+            return true
+        case 124: // Right arrow
+            viewModel.switchBrowser(by: 1)
             return true
         case 36: // Return
             if let index = viewModel.highlightedIndex,

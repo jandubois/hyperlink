@@ -127,6 +127,19 @@ key=\"up\"
 name=\"highlightedIndex\""
 }
 
+# Test: Browser switching with left/right arrows
+test_browser_switch() {
+    # Note: This test requires at least 2 browsers running
+    run_gui_test "Browser switching" \
+        "wait:100
+key:right
+key:left
+quit" \
+        "key=\"right\"
+key=\"left\"
+name=\"selectedBrowserIndex\""
+}
+
 # Test: Search filtering
 test_search() {
     run_gui_test "Search filtering" \
@@ -134,7 +147,8 @@ test_search() {
 search:test
 wait:50
 quit" \
-        "[STATE] value=\"test\" name=\"searchText\""
+        "name=\"searchText\"
+value=\"test\""
 }
 
 # Test: Number key selection copies and exits
@@ -167,6 +181,7 @@ run_tests() {
             startup) test_startup ;;
             browser_data) test_browser_data ;;
             navigation) test_navigation ;;
+            browser_switch) test_browser_switch ;;
             search) test_search ;;
             number) test_number_selection ;;
             escape) test_escape ;;
@@ -174,7 +189,7 @@ run_tests() {
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, search, number, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, escape, unit, build"
                 exit 1
                 ;;
         esac
@@ -190,6 +205,7 @@ run_tests() {
         test_startup
         test_browser_data
         test_navigation
+        test_browser_switch  # Note: more meaningful with 2+ browsers running
         test_search
         test_escape
         # test_number_selection  # Skipped by default as it copies to clipboard
