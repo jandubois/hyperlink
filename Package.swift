@@ -18,5 +18,9 @@ let package = Package(
             ],
             exclude: ["Hyperlink.entitlements"]
         ),
+        .testTarget(
+            name: "HyperlinkTests",
+            dependencies: ["Hyperlink"]
+        ),
     ]
 )

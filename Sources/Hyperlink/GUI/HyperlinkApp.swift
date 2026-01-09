@@ -14,10 +14,20 @@ struct HyperlinkApp: App {
 }
 
 /// App delegate to handle the floating panel
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: FloatingPanel?
+    var testMode: Bool = false
+    private var testCommandReader: TestCommandReader?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
+        // We're on the main thread, so we can use assumeIsolated
+        MainActor.assumeIsolated {
+            self.setupUI()
+        }
+    }
+
+    private func setupUI() {
         // Hide the default window
         NSApp.windows.forEach { $0.close() }
 
@@ -27,9 +37,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Load browsers synchronously
         panel?.viewModel.loadBrowsersSync()
+
+        // Log browser data in test mode
+        if testMode {
+            logBrowserData()
+            setupTestCommandReader()
+            TestLogger.logReady()
+        }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    private func logBrowserData() {
+        guard let viewModel = panel?.viewModel else { return }
+
+        for browser in viewModel.browsers {
+            let totalTabs = browser.windows.flatMap { $0.tabs }.count
+            TestLogger.logBrowserData(
+                browser: browser.name,
+                windows: browser.windows.count,
+                tabs: totalTabs
+            )
+
+            for window in browser.windows {
+                for tab in window.tabs {
+                    TestLogger.logTab(
+                        browser: browser.name,
+                        windowIndex: window.index,
+                        tabIndex: tab.index,
+                        title: tab.title,
+                        url: tab.url.absoluteString,
+                        active: tab.isActive
+                    )
+                }
+            }
+        }
+
+        TestLogger.logState("highlightedIndex", value: viewModel.highlightedIndex ?? -1)
+    }
+
+    private func setupTestCommandReader() {
+        testCommandReader = TestCommandReader()
+        testCommandReader?.viewModel = panel?.viewModel
+        testCommandReader?.onDismiss = { [weak self] in
+            self?.panel?.dismiss()
+        }
+        testCommandReader?.start()
+    }
+
+    nonisolated func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
 }

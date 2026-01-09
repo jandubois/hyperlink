@@ -28,10 +28,20 @@ struct Hyperlink: AsyncParsableCommand {
     @Option(name: .long, help: "Output format for --stdout: markdown, json")
     var format: OutputFormat = .markdown
 
+    @Flag(name: .long, help: "Enable test mode: verbose logging and stdin command input")
+    var test: Bool = false
+
     mutating func run() async throws {
-        // If no arguments provided, launch GUI
-        if browser == nil && !stdout && CommandLine.arguments.count == 1 {
-            await launchGUI()
+        // Enable test logging if --test flag is set
+        TestLogger.isEnabled = test
+
+        // If no arguments provided (or only --test), launch GUI
+        let shouldLaunchGUI = browser == nil && !stdout &&
+            (CommandLine.arguments.count == 1 ||
+             (CommandLine.arguments.count == 2 && test))
+
+        if shouldLaunchGUI {
+            await launchGUIApp(testMode: test)
             return
         }
 
@@ -39,10 +49,11 @@ struct Hyperlink: AsyncParsableCommand {
     }
 
     @MainActor
-    private func launchGUI() {
+    private func launchGUIApp(testMode: Bool) {
         // Launch the GUI application
         let app = NSApplication.shared
         let delegate = AppDelegate()
+        delegate.testMode = testMode
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         app.run()
