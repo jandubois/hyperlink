@@ -30,25 +30,43 @@ struct PickerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search field
-            SearchField(
-                text: $viewModel.searchText,
-                isActive: searchFieldIsActive,
-                onActivate: { viewModel.searchFocusRequested = true }
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-
-            // Browser tab bar
+            // Browser tab bar at top
             if viewModel.browsers.count > 1 {
                 BrowserTabBar(
                     browsers: viewModel.browsers,
                     selectedIndex: $viewModel.selectedBrowserIndex
                 )
                 .padding(.horizontal, 12)
+                .padding(.top, 12)
                 .padding(.bottom, 8)
             }
+
+            // Search field + Select All on same row
+            HStack(spacing: 8) {
+                // Master checkbox
+                Button(action: { viewModel.toggleSelectAll() }) {
+                    Image(systemName: masterCheckboxIcon)
+                        .foregroundColor(viewModel.selectedFilteredTabsCount > 0 ? .accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+
+                // Search field
+                SearchField(
+                    text: $viewModel.searchText,
+                    isActive: searchFieldIsActive,
+                    onActivate: { viewModel.searchFocusRequested = true }
+                )
+
+                // Selection count
+                if viewModel.selectedFilteredTabsCount > 0 {
+                    Text("\(viewModel.selectedFilteredTabsCount)/\(viewModel.filteredTabs.count)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, viewModel.browsers.count > 1 ? 0 : 12)
+            .padding(.bottom, 8)
 
             Divider()
 
@@ -88,31 +106,6 @@ struct PickerView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // Master checkbox header
-                HStack(spacing: 8) {
-                    Button(action: { viewModel.toggleSelectAll() }) {
-                        Image(systemName: masterCheckboxIcon)
-                            .foregroundColor(viewModel.selectedFilteredTabsCount > 0 ? .accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Text("Select All")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    if viewModel.selectedFilteredTabsCount > 0 {
-                        Text("\(viewModel.selectedFilteredTabsCount) of \(viewModel.filteredTabs.count)")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-
-                Divider()
-
                 TabListView(
                     browserIndex: viewModel.selectedBrowserIndex,
                     windows: viewModel.currentWindows,
