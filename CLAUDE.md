@@ -79,7 +79,7 @@ The `scripts/integration-test.sh` script tests GUI mode by:
 2. Sending commands via stdin
 3. Checking stderr output for expected patterns
 
-Requires at least one browser running with tabs.
+Uses mock data for reproducible tests (no browser required).
 
 ## Exit Codes
 

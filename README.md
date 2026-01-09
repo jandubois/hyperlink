@@ -121,7 +121,7 @@ swift build
 # Unit tests
 swift test
 
-# Integration tests (requires a browser running)
+# Integration tests (uses mock data, no browser required)
 ./scripts/integration-test.sh
 ```
 
