@@ -17,6 +17,17 @@ struct PickerView: View {
         )
     }
 
+    /// Icon for the master checkbox based on selection state
+    private var masterCheckboxIcon: String {
+        if viewModel.allFilteredTabsSelected {
+            return "checkmark.square.fill"
+        } else if viewModel.someFilteredTabsSelected {
+            return "minus.square.fill"
+        } else {
+            return "square"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Search field
@@ -77,6 +88,31 @@ struct PickerView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // Master checkbox header
+                HStack(spacing: 8) {
+                    Button(action: { viewModel.toggleSelectAll() }) {
+                        Image(systemName: masterCheckboxIcon)
+                            .foregroundColor(viewModel.selectedFilteredTabsCount > 0 ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("Select All")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    if viewModel.selectedFilteredTabsCount > 0 {
+                        Text("\(viewModel.selectedFilteredTabsCount) of \(viewModel.filteredTabs.count)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+
+                Divider()
+
                 TabListView(
                     browserIndex: viewModel.selectedBrowserIndex,
                     windows: viewModel.currentWindows,
@@ -114,6 +150,7 @@ struct PickerView: View {
             setupKeyboardHandling()
         }
         .onChange(of: viewModel.selectedBrowserIndex) { _, _ in
+            viewModel.selectedTabs.removeAll()
             viewModel.highlightActiveTab()
         }
     }
@@ -141,6 +178,7 @@ struct PickerView: View {
             let index = number - 1
             if index < viewModel.browsers.count {
                 viewModel.selectedBrowserIndex = index
+                // Note: selectedTabs cleared and highlightActiveTab called via onChange
             }
             return true
         }

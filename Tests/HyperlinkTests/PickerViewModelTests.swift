@@ -147,4 +147,73 @@ struct PickerViewModelTests {
         viewModel.selectedBrowserIndex = 1
         #expect(viewModel.currentWindows.first?.tabs.first?.title == "Chrome Tab")
     }
+
+    @Test("selectAllFilteredTabs selects all visible tabs")
+    @MainActor
+    func selectAllFilteredTabs() {
+        let viewModel = PickerViewModel()
+        let tabs = Self.makeTabs(["Tab 1", "Tab 2", "Tab 3"])
+        let window = Self.makeWindow(tabs: tabs)
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [window])]
+
+        #expect(viewModel.selectedTabs.isEmpty)
+        #expect(!viewModel.allFilteredTabsSelected)
+
+        viewModel.selectAllFilteredTabs()
+
+        #expect(viewModel.selectedTabs.count == 3)
+        #expect(viewModel.allFilteredTabsSelected)
+    }
+
+    @Test("deselectAllFilteredTabs deselects all visible tabs")
+    @MainActor
+    func deselectAllFilteredTabs() {
+        let viewModel = PickerViewModel()
+        let tabs = Self.makeTabs(["Tab 1", "Tab 2", "Tab 3"])
+        let window = Self.makeWindow(tabs: tabs)
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [window])]
+
+        viewModel.selectAllFilteredTabs()
+        #expect(viewModel.selectedTabs.count == 3)
+
+        viewModel.deselectAllFilteredTabs()
+        #expect(viewModel.selectedTabs.isEmpty)
+        #expect(!viewModel.allFilteredTabsSelected)
+    }
+
+    @Test("someFilteredTabsSelected returns true for partial selection")
+    @MainActor
+    func someFilteredTabsSelected() {
+        let viewModel = PickerViewModel()
+        let tabs = Self.makeTabs(["Tab 1", "Tab 2", "Tab 3"])
+        let window = Self.makeWindow(tabs: tabs)
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [window])]
+
+        #expect(!viewModel.someFilteredTabsSelected)
+
+        viewModel.toggleSelection(at: 0)
+        #expect(viewModel.someFilteredTabsSelected)
+        #expect(!viewModel.allFilteredTabsSelected)
+
+        viewModel.selectAllFilteredTabs()
+        #expect(!viewModel.someFilteredTabsSelected)
+        #expect(viewModel.allFilteredTabsSelected)
+    }
+
+    @Test("toggleSelectAll toggles between all and none")
+    @MainActor
+    func toggleSelectAll() {
+        let viewModel = PickerViewModel()
+        let tabs = Self.makeTabs(["Tab 1", "Tab 2"])
+        let window = Self.makeWindow(tabs: tabs)
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [window])]
+
+        #expect(viewModel.selectedTabs.isEmpty)
+
+        viewModel.toggleSelectAll()
+        #expect(viewModel.allFilteredTabsSelected)
+
+        viewModel.toggleSelectAll()
+        #expect(viewModel.selectedTabs.isEmpty)
+    }
 }

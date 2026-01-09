@@ -209,6 +209,27 @@ quit" \
 value=true"
 }
 
+# Test: Select all tabs
+test_select_all() {
+    run_gui_test "Select all tabs" \
+        "wait:100
+select_all
+quit" \
+        "name=\"selectedCount\""
+}
+
+# Test: Toggle select all selects then deselects
+test_toggle_select_all() {
+    run_gui_test "Toggle select all" \
+        "wait:100
+toggle_select_all
+toggle_select_all
+quit" \
+        "name=\"allSelected\"
+value=true
+value=false"
+}
+
 # Test: Escape dismisses
 test_escape() {
     run_gui_test "Escape dismisses" \
@@ -236,12 +257,14 @@ run_tests() {
             slash) test_slash_search ;;
             slash_passthrough) test_slash_passthrough ;;
             click_search) test_click_search ;;
+            select_all) test_select_all ;;
+            toggle_select_all) test_toggle_select_all ;;
             escape) test_escape ;;
             unit) unit_tests ;;
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, slash_passthrough, click_search, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, slash_passthrough, click_search, select_all, toggle_select_all, escape, unit, build"
                 exit 1
                 ;;
         esac
@@ -264,6 +287,8 @@ run_tests() {
         test_slash_search
         test_slash_passthrough
         test_click_search
+        test_select_all
+        test_toggle_select_all
         test_escape
     fi
 }

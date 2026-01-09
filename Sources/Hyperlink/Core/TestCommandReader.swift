@@ -27,6 +27,9 @@ private class CommandQueue: @unchecked Sendable {
 /// - search:<text>      - Type in search field
 /// - browser:<index>    - Switch to browser at index
 /// - focus_search       - Simulate clicking the search field (activates search mode)
+/// - select_all         - Select all visible tabs
+/// - deselect_all       - Deselect all visible tabs
+/// - toggle_select_all  - Toggle select all / deselect all
 /// - quit               - Exit the app
 ///
 /// Key notes:
@@ -112,6 +115,19 @@ class TestCommandReader: NSObject {
         case "focus_search", "click_search":
             viewModel?.searchFocusRequested = true
             TestLogger.logState("searchFocusRequested", value: true)
+
+        case "select_all":
+            viewModel?.selectAllFilteredTabs()
+            TestLogger.logState("selectedCount", value: viewModel?.selectedTabs.count ?? 0)
+
+        case "deselect_all":
+            viewModel?.deselectAllFilteredTabs()
+            TestLogger.logState("selectedCount", value: viewModel?.selectedTabs.count ?? 0)
+
+        case "toggle_select_all":
+            viewModel?.toggleSelectAll()
+            TestLogger.logState("selectedCount", value: viewModel?.selectedTabs.count ?? 0)
+            TestLogger.logState("allSelected", value: viewModel?.allFilteredTabsSelected ?? false)
 
         case "quit", "exit":
             TestLogger.logResult("quit")

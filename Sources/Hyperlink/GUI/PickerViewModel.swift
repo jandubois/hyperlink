@@ -229,7 +229,7 @@ class PickerViewModel: ObservableObject {
         }
 
         selectedBrowserIndex = newIndex
-        highlightActiveTab()
+        // Note: selectedTabs cleared and highlightActiveTab called via onChange in PickerView
     }
 
     func highlightActiveTab() {
@@ -251,6 +251,50 @@ class PickerViewModel: ObservableObject {
             selectedTabs.remove(identifier)
         } else {
             selectedTabs.insert(identifier)
+        }
+    }
+
+    /// Returns the number of currently visible tabs that are selected
+    var selectedFilteredTabsCount: Int {
+        filteredTabs.filter { tab in
+            selectedTabs.contains(tabIdentifier(for: tab))
+        }.count
+    }
+
+    /// Returns true if all visible tabs are selected
+    var allFilteredTabsSelected: Bool {
+        guard !filteredTabs.isEmpty else { return false }
+        return selectedFilteredTabsCount == filteredTabs.count
+    }
+
+    /// Returns true if some (but not all) visible tabs are selected
+    var someFilteredTabsSelected: Bool {
+        let count = selectedFilteredTabsCount
+        return count > 0 && count < filteredTabs.count
+    }
+
+    /// Select all currently visible (filtered) tabs
+    func selectAllFilteredTabs() {
+        for tab in filteredTabs {
+            let identifier = tabIdentifier(for: tab)
+            selectedTabs.insert(identifier)
+        }
+    }
+
+    /// Deselect all currently visible (filtered) tabs
+    func deselectAllFilteredTabs() {
+        for tab in filteredTabs {
+            let identifier = tabIdentifier(for: tab)
+            selectedTabs.remove(identifier)
+        }
+    }
+
+    /// Toggle select all / deselect all
+    func toggleSelectAll() {
+        if allFilteredTabsSelected {
+            deselectAllFilteredTabs()
+        } else {
+            selectAllFilteredTabs()
         }
     }
 
