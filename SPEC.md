@@ -226,10 +226,14 @@ Stored in `~/Library/Preferences/hyperlink.plist` via UserDefaults.
 
 ### Transform Settings
 
+See [Transformation Rules](#transformation-rules) for the full transform system.
+
+Legacy keys (migrated automatically on first launch):
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `removeBackticks` | Bool | `true` | Remove backticks from titles |
-| `trimGitHubSuffix` | Bool | `true` | Remove " · owner/repo" from GitHub page titles |
+| `removeBackticks` | Bool | `true` | *(Deprecated)* Migrated to global rule |
+| `trimGitHubSuffix` | Bool | `true` | *(Deprecated)* Migrated to global rule |
 
 ### Multi-Selection Format
 
@@ -249,6 +253,193 @@ Stored in `~/Library/Preferences/hyperlink.plist` via UserDefaults.
   [Title 2](url2)
   ```
 - `html`: HTML unordered list (for RTF, markdown for plain text)
+
+## Transformation Rules
+
+Transformation rules allow customizing the title and URL before copying to clipboard. Rules are organized into groups and applied based on URL matching and target application context.
+
+### Concepts
+
+**Groups**: Collections of rules. There are two types:
+- **Global group**: Always exists, cannot be deleted. Rules apply regardless of target application.
+- **App-specific groups**: Apply only when pasting into a specific application (identified by bundle ID).
+
+**Rules**: Each rule has:
+- A URL match pattern (prefix match, empty = match all URLs)
+- An enabled/disabled toggle
+- One or more transforms
+
+**Transforms**: Each transform has:
+- A target field (Title or URL)
+- A regex pattern to find
+- A replacement string (supports capture groups: `$1`, `$2`, etc.)
+- An enabled/disabled toggle
+
+### Execution Order
+
+1. Global rules execute first, in top-to-bottom order
+2. App-specific rules execute second (if a group exists for the target app), in top-to-bottom order
+3. Within each rule, transforms execute in top-to-bottom order
+4. All matching rules apply (rules are composable, not exclusive)
+5. If no rules match a URL, title and URL pass through unchanged
+
+### URL Matching
+
+- Patterns use prefix matching
+- No trailing wildcard required: `https://github.com` matches `https://github.com/user/repo`
+- Empty pattern matches all URLs
+- Matching is case-sensitive
+
+### Regex Transforms
+
+- Uses Swift's `NSRegularExpression` (ICU regex syntax)
+- Replacement strings support capture groups: `$0` (full match), `$1`, `$2`, etc.
+- Invalid regex syntax shows inline error; transform is skipped at runtime
+- Transforms can delete text by using empty replacement string
+
+### Target Application Detection
+
+- The target app is the application that was frontmost before Hyperlink opened
+- Captured at launch time
+- App-specific groups are identified by bundle ID (e.g., `com.apple.Agenda`)
+- UI shows app icon and display name for user-friendliness
+
+### Default Rules
+
+On first launch, the global group is populated with default rules migrated from the legacy `TitleTransform` system:
+
+| Rule Name | URL Match | Transform |
+|-----------|-----------|-----------|
+| Strip backticks | *(empty - all URLs)* | Title: `` ` `` → *(empty)* |
+| GitHub suffix | `https://github.com` | Title: ` · [^·]+$` → *(empty)* |
+
+Users can modify or delete these default rules.
+
+### Settings UI
+
+Accessed via:
+- Gear icon (⚙) in the picker window
+- Keyboard shortcut Cmd+,
+- GUI mode only (not available from CLI)
+
+#### Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ ⚙ Settings                                                     [×] │
+├─────────────────────────────────────────────────────────────────────┤
+│ Preview                                                             │
+│ ┌─────────────────────────────────────────────────────────────────┐ │
+│ │ Title: Example Page Title · user/repo                          │ │
+│ │ URL:   https://github.com/user/repo                            │ │
+│ │                                                                 │ │
+│ │ Result: Example Page Title                                     │ │
+│ │         https://github.com/user/repo                           │ │
+│ └─────────────────────────────────────────────────────────────────┘ │
+├───────────────────────┬─────────────────────────────────────────────┤
+│ Groups                │ Rules for "Global"                          │
+│                       │                                             │
+│ ▸ Global          [+] │ ☑ Strip backticks                      [−] │
+│   Safari              │   URL match: (all URLs)                     │
+│   Agenda              │   ┌───────────────────────────────────────┐ │
+│                       │   │ [Title ▾] Find: `                     │ │
+│                       │   │           Replace:                    │ │
+│                       │   └───────────────────────────────────────┘ │
+│                       │                                             │
+│                       │ ☑ GitHub suffix                        [−] │
+│                       │   URL match: https://github.com             │
+│                       │   ┌───────────────────────────────────────┐ │
+│                       │   │ [Title ▾] Find:  · [^·]+$             │ │
+│                       │   │           Replace:                    │ │
+│                       │   └───────────────────────────────────────┘ │
+│                       │                                             │
+│                       │ [+ Add Rule]                                │
+├───────────────────────┴─────────────────────────────────────────────┤
+│                                                    [Done]           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Interactions
+
+**Preview section**:
+- Shows example title and URL (initialized from currently selected tab)
+- Updates live with debounce as rules are edited
+- Shows transformed result below the inputs
+
+**Groups sidebar**:
+- Lists all groups (Global always first)
+- Click to select and show rules in detail pane
+- [+] button shows dropdown of running applications to add new app group
+- Drag to reorder app-specific groups (Global stays first)
+- Swipe or right-click to delete app groups (Global cannot be deleted)
+- Groups show app icon and display name
+
+**Rules detail pane**:
+- Shows rules for selected group
+- Checkbox to enable/disable each rule
+- [−] button to delete rule
+- Drag to reorder rules within the group
+- Each rule shows URL match field and its transforms
+- [+ Add Rule] button at bottom
+
+**Transforms within rules**:
+- Dropdown to select target (Title or URL)
+- Find field (regex pattern)
+- Replace field (replacement string with capture group support)
+- Invalid regex shows red border and error tooltip
+- [+ Add Transform] to add more transforms to a rule
+- Drag to reorder transforms within a rule
+
+**Drag-and-drop feedback**:
+- Dragged item becomes semi-transparent
+- Drop indicator shows insertion point
+
+### Data Model
+
+```swift
+struct TransformSettings: Codable {
+    var globalGroup: RuleGroup
+    var appGroups: [AppRuleGroup]
+}
+
+struct RuleGroup: Codable {
+    var rules: [TransformRule]
+}
+
+struct AppRuleGroup: Codable {
+    var bundleID: String
+    var displayName: String
+    var rules: [TransformRule]
+    var isEnabled: Bool
+}
+
+struct TransformRule: Codable, Identifiable {
+    var id: UUID
+    var name: String
+    var urlMatch: String  // empty = match all
+    var transforms: [Transform]
+    var isEnabled: Bool
+}
+
+struct Transform: Codable, Identifiable {
+    var id: UUID
+    var target: TransformTarget  // .title or .url
+    var pattern: String          // regex
+    var replacement: String
+    var isEnabled: Bool
+}
+
+enum TransformTarget: String, Codable {
+    case title
+    case url
+}
+```
+
+### Persistence
+
+- Stored in UserDefaults as JSON-encoded `TransformSettings`
+- Key: `transformRules`
+- Legacy `removeBackticks` and `trimGitHubSuffix` keys are migrated on first launch, then removed
 
 ## Permissions
 
@@ -355,4 +546,4 @@ Sources/
 - Browser extensions for richer metadata
 - Sync preferences via iCloud
 - URL shortening integration
-- Custom transform rules (regex-based)
+- Import/export transformation rules
