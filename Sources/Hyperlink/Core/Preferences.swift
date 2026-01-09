@@ -1,8 +1,8 @@
 import Foundation
 
 /// Application preferences stored in UserDefaults
-@MainActor
-final class Preferences: ObservableObject {
+/// Thread-safe via UserDefaults which is itself thread-safe
+final class Preferences: ObservableObject, @unchecked Sendable {
     static let shared = Preferences()
 
     private let defaults = UserDefaults.standard
