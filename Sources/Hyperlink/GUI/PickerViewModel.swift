@@ -10,6 +10,8 @@ class PickerViewModel: ObservableObject {
     @Published var selectedTabs: Set<TabIdentifier> = []
     @Published var highlightedIndex: Int? = nil
     @Published var isLoading: Bool = true
+    @Published var errorMessage: String? = nil
+    @Published var permissionDenied: Bool = false
 
     private let preferences = Preferences.shared
 
@@ -49,11 +51,33 @@ class PickerViewModel: ObservableObject {
 
     func loadBrowsers() async {
         isLoading = true
+        errorMessage = nil
+        permissionDenied = false
         defer { isLoading = false }
 
-        var browserDataList: [BrowserData] = []
+        // Check for Accessibility permission
+        if !PermissionChecker.hasAccessibilityPermission {
+            PermissionChecker.promptForAccessibilityIfNeeded()
+            // Give a moment for permission to be granted
+            try? await Task.sleep(for: .milliseconds(500))
 
-        for browser in BrowserDetector.runningBrowsers() {
+            if !PermissionChecker.hasAccessibilityPermission {
+                permissionDenied = true
+                errorMessage = "Accessibility permission required"
+                return
+            }
+        }
+
+        let runningBrowsers = BrowserDetector.runningBrowsers()
+        if runningBrowsers.isEmpty {
+            errorMessage = "No browsers running"
+            return
+        }
+
+        var browserDataList: [BrowserData] = []
+        var lastError: Error?
+
+        for browser in runningBrowsers {
             let source = BrowserRegistry.source(for: browser)
             do {
                 let windows = try await source.windows()
@@ -64,9 +88,25 @@ class PickerViewModel: ObservableObject {
                         windows: windows
                     ))
                 }
+            } catch let error as LinkSourceError {
+                if case .permissionDenied = error {
+                    permissionDenied = true
+                    errorMessage = "Accessibility permission required"
+                    return
+                }
+                lastError = error
             } catch {
-                // Skip browsers that fail
+                lastError = error
             }
+        }
+
+        if browserDataList.isEmpty {
+            if let error = lastError {
+                errorMessage = "Failed to read tabs: \(error.localizedDescription)"
+            } else {
+                errorMessage = "No tabs found"
+            }
+            return
         }
 
         browsers = browserDataList

@@ -29,6 +29,33 @@ struct PickerView: View {
             if viewModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.permissionDenied {
+                VStack(spacing: 12) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    Text("Accessibility Permission Required")
+                        .font(.headline)
+                    Text("Hyperlink needs permission to read browser tabs.")
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Open System Settings") {
+                        PermissionChecker.openAccessibilitySettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else if let errorMessage = viewModel.errorMessage {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.orange)
+                    Text(errorMessage)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.filteredTabs.isEmpty {
                 Text(viewModel.searchText.isEmpty ? "No tabs found" : "No matching tabs")
                     .foregroundColor(.secondary)
