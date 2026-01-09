@@ -1,6 +1,6 @@
 import Testing
 import AppKit
-@testable import Hyperlink
+@testable import hyperlink
 
 @Suite("ClipboardWriter Tests", .serialized)
 struct ClipboardWriterTests {

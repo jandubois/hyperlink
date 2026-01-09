@@ -12,15 +12,16 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "Hyperlink",
+            name: "hyperlink",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
+            path: "Sources/Hyperlink",
             exclude: ["Hyperlink.entitlements"]
         ),
         .testTarget(
             name: "HyperlinkTests",
-            dependencies: ["Hyperlink"]
+            dependencies: ["hyperlink"]
         ),
     ]
 )

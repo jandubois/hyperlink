@@ -1,5 +1,5 @@
 import Testing
-@testable import Hyperlink
+@testable import hyperlink
 
 @Suite("TitleTransform Tests")
 struct TitleTransformTests {

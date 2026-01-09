@@ -12,7 +12,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BINARY="$PROJECT_DIR/.build/debug/Hyperlink"
+BINARY="$PROJECT_DIR/.build/debug/hyperlink"
 TIMEOUT_SEC=5
 
 # Colors for output
