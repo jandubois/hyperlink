@@ -31,16 +31,21 @@ struct Hyperlink: AsyncParsableCommand {
     mutating func run() async throws {
         // If no arguments provided, launch GUI
         if browser == nil && !stdout && CommandLine.arguments.count == 1 {
-            launchGUI()
+            await launchGUI()
             return
         }
 
         try await runCLI()
     }
 
+    @MainActor
     private func launchGUI() {
-        // Placeholder for Phase 5
-        print("GUI mode not yet implemented")
+        // Launch the GUI application
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        app.run()
     }
 
     private func runCLI() async throws {
