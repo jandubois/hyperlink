@@ -29,6 +29,10 @@ struct SearchField: NSViewRepresentable {
             if nsView.window?.firstResponder != nsView.textField &&
                nsView.window?.firstResponder != nsView.textField.currentEditor() {
                 nsView.window?.makeFirstResponder(nsView.textField)
+                // Move cursor to end (NSTextField selects all text when becoming first responder)
+                if let editor = nsView.textField.currentEditor() {
+                    editor.selectedRange = NSRange(location: editor.string.count, length: 0)
+                }
             }
         } else {
             if nsView.window?.firstResponder == nsView.textField ||
