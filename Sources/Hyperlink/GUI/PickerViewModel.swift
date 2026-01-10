@@ -470,15 +470,15 @@ class PickerViewModel: ObservableObject {
             return
         }
 
-        // Find window and tab indices
+        // Find window and tab indices using the actual indices from the browser
         var windowIndex = 1
         var tabIndex = 1
         for window in browserData.windows {
             if let foundTab = window.tabs.first(where: { $0.url == tab.url && $0.title == tab.title }) {
-                tabIndex = foundTab.index
+                windowIndex = window.index  // Use actual window index from browser
+                tabIndex = foundTab.index   // Use actual tab index from browser
                 break
             }
-            windowIndex += 1
         }
 
         // Get bundle identifier for the browser
