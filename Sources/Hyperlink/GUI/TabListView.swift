@@ -91,6 +91,7 @@ struct TabRowView: View {
     @State private var isHovering = false
     @State private var showPreview = false
     @State private var previewMetadata: OpenGraphMetadata?
+    @State private var isLoadingPreview = false
     @State private var hoverTask: Task<Void, Never>?
 
     var body: some View {
@@ -140,7 +141,7 @@ struct TabRowView: View {
                     .foregroundColor(.secondary)
             }
             .popover(isPresented: $showPreview, arrowEdge: .trailing) {
-                LinkPreviewView(url: tab.url, metadata: previewMetadata)
+                LinkPreviewView(url: tab.url, metadata: previewMetadata, isLoading: isLoadingPreview)
             }
 
             Spacer()
@@ -173,20 +174,28 @@ struct TabRowView: View {
             if hovering {
                 // Start preview fetch after delay
                 hoverTask = Task {
-                    try? await Task.sleep(for: .milliseconds(500))
+                    try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
+
+                    // Show popover with loading state
+                    isLoadingPreview = true
+                    showPreview = true
+
+                    // Fetch metadata
                     let metadata = await OpenGraphCache.shared.fetch(for: tab.url)
                     guard !Task.isCancelled else { return }
-                    if metadata != nil {
-                        previewMetadata = metadata
-                        showPreview = true
-                    }
+
+                    // Update with fetched data
+                    isLoadingPreview = false
+                    previewMetadata = metadata
                 }
             } else {
                 // Cancel pending fetch and hide preview
                 hoverTask?.cancel()
                 hoverTask = nil
                 showPreview = false
+                isLoadingPreview = false
+                previewMetadata = nil
             }
         }
         .onTapGesture {
@@ -199,47 +208,68 @@ struct TabRowView: View {
 struct LinkPreviewView: View {
     let url: URL
     let metadata: OpenGraphMetadata?
+    var isLoading: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // OG Image
-            if let imageURL = metadata?.imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(maxWidth: 280, maxHeight: 150)
-                            .clipped()
-                    case .failure:
-                        EmptyView()
-                    case .empty:
-                        ProgressView()
-                            .frame(width: 280, height: 100)
-                    @unknown default:
-                        EmptyView()
+            if isLoading {
+                // Loading state
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading preview...")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 20)
+            } else if let metadata = metadata {
+                // OG Image
+                if let imageURL = metadata.imageURL {
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(maxWidth: 280, maxHeight: 150)
+                                .clipped()
+                        case .failure:
+                            EmptyView()
+                        case .empty:
+                            ProgressView()
+                                .frame(width: 280, height: 100)
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
                 }
-            }
 
-            // Title
-            if let title = metadata?.title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(2)
-                    .foregroundColor(.primary)
-            }
+                // Title
+                if let title = metadata.title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
+                }
 
-            // Description
-            if let description = metadata?.description, !description.isEmpty {
-                Text(description)
+                // Description
+                if let description = metadata.description, !description.isEmpty {
+                    Text(description)
+                        .font(.system(size: 12))
+                        .lineLimit(4)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                // No metadata available
+                Text("No preview available")
                     .font(.system(size: 12))
-                    .lineLimit(4)
                     .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
             }
 
-            // URL
+            // URL (always shown)
             Text(url.host ?? url.absoluteString)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
