@@ -1,18 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// Main SwiftUI application for the GUI picker
-struct HyperlinkApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        WindowGroup {
-            EmptyView()
-        }
-        .windowStyle(.hiddenTitleBar)
-    }
-}
-
 /// App delegate to handle the floating panel
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -94,17 +82,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Custom hosting view that doesn't reset cursor on SwiftUI updates
-class StableCursorHostingView<Content: View>: NSHostingView<Content> {
-    override func cursorUpdate(with event: NSEvent) {
-        // Don't call super - this prevents the system from resetting the cursor
-        // when SwiftUI views update (e.g., TextField cursor blinking)
-    }
-}
-
 /// Floating window that stays above other windows
 class FloatingPanel: NSWindow {
-    private var hostingView: StableCursorHostingView<PickerView>?
+    private var hostingView: NSHostingView<PickerView>?
     var viewModel: PickerViewModel
 
     init(targetAppBundleID: String? = nil) {
@@ -130,16 +110,11 @@ class FloatingPanel: NSWindow {
         self.backgroundColor = .clear
         self.hasShadow = true
 
-        // Disable cursor rects to prevent SwiftUI from resetting cursors
-        // Text fields will manage their own cursors via tracking areas
-        self.acceptsMouseMovedEvents = true
-        self.disableCursorRects()
-
         // Set up content view
         let pickerView = PickerView(viewModel: viewModel, onDismiss: { [weak self] in
             self?.dismiss()
         })
-        hostingView = StableCursorHostingView(rootView: pickerView)
+        hostingView = NSHostingView(rootView: pickerView)
         hostingView?.frame = contentView?.bounds ?? .zero
         hostingView?.autoresizingMask = [.width, .height]
         contentView?.addSubview(hostingView!)

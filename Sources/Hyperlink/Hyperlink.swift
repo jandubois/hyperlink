@@ -2,8 +2,11 @@ import ArgumentParser
 import AppKit
 import Foundation
 
+// NOTE: Using ParsableCommand (not AsyncParsableCommand) is critical for GUI mode.
+// Launching NSApplication.run() from within an async context causes the cursor to
+// disappear in text fields. The synchronous entry point avoids this issue.
 @main
-struct Hyperlink: AsyncParsableCommand {
+struct Hyperlink: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "hyperlink",
         abstract: "Extract hyperlinks from browser tabs",
@@ -37,7 +40,7 @@ struct Hyperlink: AsyncParsableCommand {
     @Option(name: .long, help: "Load mock data from a JSON file instead of querying browsers")
     var mockData: String?
 
-    mutating func run() async throws {
+    mutating func run() throws {
         // Enable test logging if --test flag is set
         TestLogger.isEnabled = test
 
@@ -53,7 +56,7 @@ struct Hyperlink: AsyncParsableCommand {
 
         // Handle --save-data: save all browser data and exit
         if let savePath = saveData {
-            try await saveAllBrowserData(to: savePath)
+            try saveAllBrowserData(to: savePath)
             return
         }
 
@@ -69,28 +72,31 @@ struct Hyperlink: AsyncParsableCommand {
         )
 
         if shouldLaunchGUI {
-            await launchGUIApp(testMode: test)
+            launchGUIApp(testMode: test)
             return
         }
 
-        try await runCLI()
+        try runCLI()
     }
 
-    @MainActor
     private func launchGUIApp(testMode: Bool) {
         // Capture the frontmost browser before our window takes focus
         BrowserDetector.captureFrontmostBrowser()
 
-        // Launch the GUI application
-        let app = NSApplication.shared
-        let delegate = AppDelegate()
-        delegate.testMode = testMode
-        app.delegate = delegate
-        app.setActivationPolicy(.regular)
-        app.run()
+        // Launch the GUI application synchronously on the main thread.
+        // This must run from a synchronous context (not async) for cursors to work.
+        // See comment at top of file about ParsableCommand vs AsyncParsableCommand.
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            let delegate = AppDelegate()
+            delegate.testMode = testMode
+            app.delegate = delegate
+            app.setActivationPolicy(.regular)
+            app.run()
+        }
     }
 
-    private func saveAllBrowserData(to path: String) async throws {
+    private func saveAllBrowserData(to path: String) throws {
         var browserDataList: [BrowserSnapshot.BrowserData] = []
 
         // Get all running browsers
@@ -137,7 +143,7 @@ struct Hyperlink: AsyncParsableCommand {
         }
     }
 
-    private func runCLI() async throws {
+    private func runCLI() throws {
         // Get the browser source (use mock if loaded)
         let source: any LinkSource
         if MockDataStore.isActive {
