@@ -5,6 +5,8 @@ import AppKit
 struct SearchField: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
+    var matchCount: Int?
+    var totalCount: Int?
 
     func makeNSView(context: Context) -> SearchFieldView {
         let view = SearchFieldView()
@@ -20,6 +22,7 @@ struct SearchField: NSViewRepresentable {
             nsView.textField.stringValue = text
         }
         nsView.updateActiveState(isActive: isFocused, hasText: !text.isEmpty)
+        nsView.updateMatchCount(matchCount: matchCount, totalCount: totalCount, hasText: !text.isEmpty)
 
         // Handle focus changes from parent
         if isFocused {
@@ -81,6 +84,7 @@ class SearchFieldView: NSView {
     let textField = NSTextField()
     private let iconView = NSImageView()
     private let clearButton = NSButton()
+    private let matchCountLabel = NSTextField(labelWithString: "")
 
     private var isActive = false
     private var hasText = false
@@ -114,6 +118,19 @@ class SearchFieldView: NSView {
         textField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(textField)
 
+        // Match count label (e.g., "3/9")
+        matchCountLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        matchCountLabel.textColor = .tertiaryLabelColor
+        matchCountLabel.isBordered = false
+        matchCountLabel.drawsBackground = false
+        matchCountLabel.isEditable = false
+        matchCountLabel.isSelectable = false
+        matchCountLabel.translatesAutoresizingMaskIntoConstraints = false
+        matchCountLabel.isHidden = true
+        matchCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+        matchCountLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSubview(matchCountLabel)
+
         // Clear button
         clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Clear")
         clearButton.contentTintColor = .secondaryLabelColor
@@ -131,8 +148,11 @@ class SearchFieldView: NSView {
             iconView.heightAnchor.constraint(equalToConstant: 16),
 
             textField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            textField.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -4),
+            textField.trailingAnchor.constraint(equalTo: matchCountLabel.leadingAnchor, constant: -4),
             textField.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            matchCountLabel.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -4),
+            matchCountLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             clearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             clearButton.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -150,6 +170,19 @@ class SearchFieldView: NSView {
         self.hasText = hasText
         clearButton.isHidden = !hasText
         updateAppearance()
+    }
+
+    func updateMatchCount(matchCount: Int?, totalCount: Int?, hasText: Bool) {
+        // Show match count only when search is active and some results are filtered out
+        if hasText,
+           let match = matchCount,
+           let total = totalCount,
+           match < total {
+            matchCountLabel.stringValue = "\(match)/\(total)"
+            matchCountLabel.isHidden = false
+        } else {
+            matchCountLabel.isHidden = true
+        }
     }
 
     private func updateAppearance() {

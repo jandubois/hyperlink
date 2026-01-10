@@ -66,7 +66,9 @@ struct PickerView: View {
                 // Search field
                 SearchField(
                     text: $viewModel.searchText,
-                    isFocused: $searchFieldHasFocus
+                    isFocused: $searchFieldHasFocus,
+                    matchCount: viewModel.filteredTabs.count,
+                    totalCount: viewModel.allCurrentTabs.count
                 )
 
                 // Selection count
