@@ -47,21 +47,38 @@ enum PageSourceFetcher {
         tabIndex: Int,
         tabURL: URL
     ) async throws -> PageSourceResult {
-        // Try browser-specific methods first
+        // Try browser-specific methods first, running on background thread
+        // to avoid blocking the main thread with AppleScript execution
         do {
-            let html = try fetchFromBrowser(
-                browserName: browserName,
-                bundleIdentifier: bundleIdentifier,
-                windowIndex: windowIndex,
-                tabIndex: tabIndex
-            )
+            let html = try await withThrowingTaskGroup(of: String.self) { group in
+                // Task to fetch from browser
+                group.addTask {
+                    try fetchFromBrowser(
+                        browserName: browserName,
+                        bundleIdentifier: bundleIdentifier,
+                        windowIndex: windowIndex,
+                        tabIndex: tabIndex
+                    )
+                }
+
+                // Timeout task
+                group.addTask {
+                    try await Task.sleep(for: .seconds(10))
+                    throw PageSourceError.scriptError("Timed out waiting for browser")
+                }
+
+                // Return first result, cancel the other
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
+            }
             return PageSourceResult(html: html, usedHTTPFallback: false)
         } catch PageSourceError.browserNotSupported {
             // Fall through to HTTP
         } catch PageSourceError.permissionDenied {
             // Fall through to HTTP for Chromium without JS enabled
         } catch {
-            // For other errors, try HTTP fallback
+            // For other errors (including timeout), try HTTP fallback
         }
 
         // HTTP fallback
