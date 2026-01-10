@@ -43,13 +43,20 @@ Sources/Hyperlink/
 │   ├── SafariSource.swift    # Safari AppleScript implementation
 │   ├── ChromiumSource.swift  # Chrome/Arc/Brave/Edge implementation
 │   └── OrionSource.swift     # Orion browser implementation
+├── LinkExtractor/
+│   ├── PageSourceFetcher.swift    # Fetch HTML source from browser tabs
+│   ├── HTMLLinkParser.swift       # Extract links from HTML
+│   ├── TitleFetcher.swift         # Fetch <title> from URLs
+│   ├── ExtractedLinksSource.swift # Pseudo-browser for extracted links
+│   └── DomainFormatter.swift      # Apex domain name formatting
 └── GUI/
     ├── HyperlinkApp.swift    # SwiftUI app + FloatingPanel
     ├── PickerView.swift      # Main picker UI
     ├── PickerViewModel.swift # UI state and logic
     ├── BrowserTabBar.swift   # Browser selection tabs
     ├── TabListView.swift     # Scrollable tab list
-    └── SearchField.swift     # Filter input
+    ├── SearchField.swift     # Filter input
+    └── ToastView.swift       # Toast notifications for errors
 ```
 
 ## Key Patterns

@@ -220,6 +220,113 @@ Invoked when no command-line flags are provided (just `hyperlink`).
 | `Cmd+F` | Focus search field |
 | `Escape` | Close without copying |
 
+## Link Extractor
+
+Extract all hyperlinks from a page and display them as a pseudo-browser tab for easy copying.
+
+### Trigger
+
+- **Cmd+Enter** on a selected tab row
+- **Click link icon** (chain/link symbol) on the right side of a tab row
+
+### Page Source Retrieval
+
+Sources are tried in order until one succeeds:
+
+1. **Safari**: AppleScript `tell application "Safari" to get source of document N`
+2. **Chromium browsers**: AppleScript JavaScript execution (requires "Allow JavaScript from Apple Events" in View > Developer menu)
+   ```applescript
+   tell application "Google Chrome"
+       execute tab N of window M javascript "document.documentElement.outerHTML"
+   end tell
+   ```
+3. **Fallback**: Direct HTTP fetch of the URL (loses authentication context; show warning to user)
+
+### Link Extraction
+
+- Parse HTML source for `<a href="...">` elements
+- Extract only `http://` and `https://` URLs
+- Resolve relative URLs against the page's base URL
+- Deduplicate by URL (keep first occurrence)
+- Capture anchor text for placeholder display
+
+### Pseudo-Tab Display
+
+A new "browser" tab appears in the tab bar representing the extracted links:
+
+- **Position**: First tab in the browser tab bar
+- **Name**: Apex domain with common TLDs stripped
+  - `github.com` → `github`
+  - `docs.example.org` → `example`
+  - `api.example.io` → `example.io` (non-common TLD kept)
+  - Common TLDs: `.com`, `.org`, `.net`
+- **Icon**: Site favicon (fetched from `https://domain/favicon.ico` or Google's favicon service)
+- **Persistence**: Ephemeral (not saved across app restarts)
+- **Multiple tabs**: Multiple extracted pseudo-tabs can coexist
+
+### Extracted Links Display
+
+Each extracted link appears as a row in the tab list:
+
+- **Initial state**: Shows anchor text from the page (dimmed/italic to indicate provisional)
+- **After title fetch**: Shows actual `<title>` from the linked page (normal styling)
+- URL shown below the title (secondary text style)
+
+### Title Fetching
+
+For each extracted URL, fetch the real page title:
+
+- **Method**: HTTP GET with `Range: bytes=0-4095` header (first 4KB only)
+- **Parsing**: Extract content of first `<title>` tag
+- **Concurrency**: Unlimited parallel fetches
+- **Retry**: Retry failed fetches up to 3 times with exponential backoff
+- **Timeout**: 5 seconds per request
+- **Fallback**: If title fetch fails, keep anchor text (or URL if no anchor text)
+
+### User Actions
+
+- **Select extracted link**: Copies to clipboard (same as regular tabs)
+- **Checkboxes**: Multi-select works the same as regular tabs
+- **Future**: Option+Cmd+Enter or Option+click for configuration dialog (link type filters, etc.)
+
+### Error Handling
+
+- **Page source fetch fails**: Show toast notification with error message; no pseudo-tab created
+- **Individual title fetch fails**: Keep placeholder text, no error shown to user
+
+### Data Model
+
+```swift
+/// A pseudo-browser representing extracted links from a page
+struct ExtractedLinksSource {
+    let sourceURL: URL
+    let sourceTitle: String
+    let links: [ExtractedLink]
+    let favicon: NSImage?
+
+    var displayName: String  // Computed from apex domain
+}
+
+struct ExtractedLink: Identifiable {
+    let id: UUID
+    let url: URL
+    let anchorText: String?  // From <a> element
+    var fetchedTitle: String?  // From target page <title>
+    var titleFetchState: TitleFetchState
+
+    enum TitleFetchState {
+        case pending
+        case fetching
+        case success
+        case failed
+    }
+
+    var displayTitle: String {
+        fetchedTitle ?? anchorText ?? url.absoluteString
+    }
+}
+```
+
 ## Configuration
 
 Stored in `~/Library/Preferences/hyperlink.plist` via UserDefaults.
