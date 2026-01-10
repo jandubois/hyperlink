@@ -19,6 +19,15 @@ struct PickerView: View {
         }
     }
 
+    /// Label for the copy button based on selection state
+    private var copyButtonLabel: String {
+        if viewModel.allFilteredTabsSelected {
+            return "Copy All"
+        } else {
+            return "Copy Selected (\(viewModel.selectedFilteredTabsCount)/\(viewModel.filteredTabs.count))"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header row: browser tabs (if multiple) + settings/help icons
@@ -71,11 +80,18 @@ struct PickerView: View {
                     totalCount: viewModel.allCurrentTabs.count
                 )
 
-                // Selection count
+                // Copy button (when tabs are selected)
                 if viewModel.selectedFilteredTabsCount > 0 {
-                    Text("\(viewModel.selectedFilteredTabsCount)/\(viewModel.filteredTabs.count)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
+                    Button(action: {
+                        viewModel.copySelected()
+                        onDismiss()
+                    }) {
+                        Text(copyButtonLabel)
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .keyboardShortcut(.return, modifiers: .command)
                 }
             }
             .padding(.horizontal, 12)
@@ -130,20 +146,6 @@ struct PickerView: View {
                         onDismiss()
                     }
                 )
-            }
-
-            // Footer with copy button for multi-select
-            if !viewModel.selectedTabs.isEmpty {
-                Divider()
-                HStack {
-                    Spacer()
-                    Button("Copy Selected (\(viewModel.selectedTabs.count))") {
-                        viewModel.copySelected()
-                        onDismiss()
-                    }
-                    .keyboardShortcut(.return, modifiers: .command)
-                }
-                .padding(12)
             }
         }
         .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
