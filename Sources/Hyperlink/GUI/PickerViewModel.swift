@@ -26,7 +26,15 @@ class PickerViewModel: ObservableObject {
     @Published var toastMessage: String? = nil
 
     /// Extracted link sources (pseudo-browsers)
-    @Published var extractedSources: [ExtractedLinksSource] = []
+    @Published var extractedSources: [ExtractedLinksSource] = [] {
+        didSet {
+            // Subscribe to changes in nested ObservableObjects so favicon updates propagate
+            setupExtractedSourcesObservation()
+        }
+    }
+
+    /// Subscriptions for nested ObservableObject changes
+    private var extractedSourceCancellables: [AnyCancellable] = []
 
     /// Whether link extraction is in progress
     @Published var isExtracting: Bool = false
@@ -440,6 +448,34 @@ class PickerViewModel: ObservableObject {
         return extractedSources[selectedBrowserIndex]
     }
 
+    /// Close an extracted source at the given index
+    func closeExtractedSource(at index: Int) {
+        guard index < extractedSources.count else { return }
+
+        extractedSources.remove(at: index)
+
+        // Adjust selected index if needed
+        if selectedBrowserIndex >= extractedSources.count + browsers.count {
+            selectedBrowserIndex = max(0, extractedSources.count + browsers.count - 1)
+        } else if selectedBrowserIndex > index {
+            selectedBrowserIndex -= 1
+        } else if selectedBrowserIndex == index && !extractedSources.isEmpty {
+            // Stay at same index (now pointing to next item)
+        } else if selectedBrowserIndex == index && extractedSources.isEmpty {
+            // Switch to first browser
+            selectedBrowserIndex = 0
+        }
+
+        selectedTabs.removeAll()
+        highlightActiveTab()
+    }
+
+    /// Close the currently selected extracted source (if viewing one)
+    func closeCurrentExtractedSource() {
+        guard isViewingExtractedSource else { return }
+        closeExtractedSource(at: selectedBrowserIndex)
+    }
+
     /// All browser data including extracted sources
     var allBrowserData: [BrowserData] {
         let extractedBrowsers = extractedSources.map { source in
@@ -501,6 +537,14 @@ class PickerViewModel: ObservableObject {
         windowIndex: Int,
         tabIndex: Int
     ) {
+        // Check if we already have an extracted source for this URL
+        if let existingIndex = extractedSources.firstIndex(where: { $0.sourceURL == tab.url }) {
+            selectedBrowserIndex = existingIndex
+            selectedTabs.removeAll()
+            highlightedIndex = 0
+            return
+        }
+
         guard !isExtracting else { return }
         isExtracting = true
         extractionStatus = "Getting page from \(browserName)..."
@@ -581,6 +625,20 @@ class PickerViewModel: ObservableObject {
         case "microsoft edge", "edge": return "com.microsoft.edgemac"
         case "orion": return "com.kagi.kagimacOS"
         default: return "com.apple.Safari"
+        }
+    }
+
+    /// Subscribe to objectWillChange of nested ExtractedLinksSource objects
+    /// so that changes (like favicon updates) trigger UI refresh
+    private func setupExtractedSourcesObservation() {
+        extractedSourceCancellables.removeAll()
+        for source in extractedSources {
+            source.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    self?.objectWillChange.send()
+                }
+                .store(in: &extractedSourceCancellables)
         }
     }
 }

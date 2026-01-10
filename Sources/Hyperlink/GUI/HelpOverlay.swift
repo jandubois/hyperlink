@@ -14,7 +14,8 @@ struct HelpOverlay: View {
         ("Cmd+1-9", "Switch to browser"),
         ("Tab", "Switch focus (list/search)"),
         ("Escape", "Clear search / Close"),
-        ("Cmd+Return", "Copy selected tabs"),
+        ("Cmd+Return", "Extract links from page"),
+        ("Cmd+Delete", "Close extracted tab"),
         ("?", "Show this help"),
     ]
 
@@ -47,7 +48,7 @@ struct HelpOverlay: View {
                 }
             }
 
-            Text("Press any key or click to dismiss")
+            Text("Press Escape or click outside to dismiss")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
         }

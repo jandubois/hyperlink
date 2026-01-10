@@ -34,7 +34,11 @@ struct PickerView: View {
                 if viewModel.allBrowserData.count > 1 {
                     BrowserTabBar(
                         browsers: viewModel.allBrowserData,
-                        selectedIndex: $viewModel.selectedBrowserIndex
+                        selectedIndex: $viewModel.selectedBrowserIndex,
+                        extractedSourceCount: viewModel.extractedSourceCount,
+                        onClose: { index in
+                            viewModel.closeExtractedSource(at: index)
+                        }
                     )
                 }
 
@@ -294,8 +298,11 @@ struct PickerView: View {
                 return true
             }
             return false // Let escape propagate to close window
-        case 36: // Return - copy and dismiss
-            if !viewModel.selectedTabs.isEmpty {
+        case 36: // Return
+            if hasCmd {
+                // Cmd+Enter for link extraction
+                viewModel.extractLinksFromHighlightedTab()
+            } else if !viewModel.selectedTabs.isEmpty {
                 // Copy checkbox-selected tabs
                 viewModel.copySelected()
                 onDismiss()
@@ -311,9 +318,13 @@ struct PickerView: View {
             break
         }
 
-        // Cmd+Enter for link extraction
-        if hasCmd && event.keyCode == 36 {
-            viewModel.extractLinksFromHighlightedTab()
+        // Cmd+Backspace to close extracted source tab
+        if hasCmd && event.keyCode == 51 {
+            if viewModel.isViewingExtractedSource {
+                viewModel.closeCurrentExtractedSource()
+            } else {
+                viewModel.showToast("Only extracted tabs can be closed")
+            }
             return true
         }
 

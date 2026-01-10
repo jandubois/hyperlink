@@ -4,6 +4,10 @@ import SwiftUI
 struct BrowserTabBar: View {
     let browsers: [PickerViewModel.BrowserData]
     @Binding var selectedIndex: Int
+    /// Number of extracted sources (these are closable, at the start of the list)
+    let extractedSourceCount: Int
+    /// Called when a closable tab's close button is clicked
+    let onClose: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -13,7 +17,9 @@ struct BrowserTabBar: View {
                     icon: browser.icon,
                     isSelected: index == selectedIndex,
                     isFirst: index == 0,
-                    isLast: index == browsers.count - 1
+                    isLast: index == browsers.count - 1,
+                    isClosable: index < extractedSourceCount,
+                    onClose: { onClose(index) }
                 )
                 .onTapGesture {
                     selectedIndex = index
@@ -36,9 +42,29 @@ struct BrowserTab: View {
     let isSelected: Bool
     let isFirst: Bool
     let isLast: Bool
+    let isClosable: Bool
+    let onClose: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 6) {
+            // Close button (shown on hover for closable tabs)
+            if isClosable {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 14, height: 14)
+                        .background(
+                            Circle()
+                                .fill(Color.primary.opacity(isHovering ? 0.1 : 0))
+                        )
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovering ? 1 : 0)
+            }
+
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -48,7 +74,8 @@ struct BrowserTab: View {
                 .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                 .lineLimit(1)
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, isClosable ? 8 : 14)
+        .padding(.trailing, 14)
         .padding(.vertical, 8)
         .background(
             Group {
@@ -80,6 +107,9 @@ struct BrowserTab: View {
             )
         )
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 

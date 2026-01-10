@@ -91,7 +91,7 @@ struct Hyperlink: ParsableCommand {
             let delegate = AppDelegate()
             delegate.testMode = testMode
             app.delegate = delegate
-            app.setActivationPolicy(.regular)
+            app.setActivationPolicy(.accessory)
             app.run()
         }
     }
