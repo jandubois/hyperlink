@@ -209,6 +209,11 @@ class TestCommandReader: NSObject {
             viewModel?.searchText.append("/")
             TestLogger.logState("searchText", value: viewModel?.searchText ?? "")
 
+        case "tab":
+            // TAB toggles focus between list and search field
+            viewModel?.searchFieldHasFocus.toggle()
+            TestLogger.logState("searchFieldHasFocus", value: viewModel?.searchFieldHasFocus ?? false)
+
         default:
             break
         }

@@ -6,7 +6,6 @@ struct PickerView: View {
     let onDismiss: () -> Void
     @State private var showHelp = false
     @State private var showSettings = false
-    @State private var searchFieldHasFocus = false
 
     /// Icon for the master checkbox based on selection state
     private var masterCheckboxIcon: String {
@@ -75,7 +74,7 @@ struct PickerView: View {
                 // Search field
                 SearchField(
                     text: $viewModel.searchText,
-                    isFocused: $searchFieldHasFocus,
+                    isFocused: $viewModel.searchFieldHasFocus,
                     matchCount: viewModel.filteredTabs.count,
                     totalCount: viewModel.allCurrentTabs.count
                 )
@@ -190,6 +189,9 @@ struct PickerView: View {
             viewModel.selectedTabs.removeAll()
             viewModel.highlightActiveTab()
         }
+        .onChange(of: viewModel.searchFieldHasFocus) { _, newValue in
+            TestLogger.logState("viewModel.searchFieldHasFocus", value: newValue)
+        }
     }
 
     private func setupKeyboardHandling() {
@@ -239,7 +241,7 @@ struct PickerView: View {
             if hasCmd {
                 viewModel.switchBrowser(by: -1)
                 return true
-            } else if !searchFieldHasFocus {
+            } else if !viewModel.searchFieldHasFocus {
                 viewModel.switchBrowser(by: -1)
                 return true
             }
@@ -249,18 +251,18 @@ struct PickerView: View {
             if hasCmd {
                 viewModel.switchBrowser(by: 1)
                 return true
-            } else if !searchFieldHasFocus {
+            } else if !viewModel.searchFieldHasFocus {
                 viewModel.switchBrowser(by: 1)
                 return true
             }
             return false // Let text field handle cursor movement
         case 48: // Tab - toggle focus between list and search
-            searchFieldHasFocus.toggle()
+            viewModel.searchFieldHasFocus.toggle()
             return true
         case 53: // Escape
             if !viewModel.searchText.isEmpty {
                 viewModel.searchText = ""
-                searchFieldHasFocus = false
+                viewModel.searchFieldHasFocus = false
                 return true
             }
             return false // Let escape propagate to close window
@@ -307,11 +309,11 @@ struct PickerView: View {
 
         // === Focus-dependent keys ===
 
-        if searchFieldHasFocus {
+        if viewModel.searchFieldHasFocus {
             // Search field has focus - let most keys pass through to the text field
             // But handle backspace when search is empty to switch focus back
             if event.keyCode == 51 && viewModel.searchText.isEmpty { // Backspace
-                searchFieldHasFocus = false
+                viewModel.searchFieldHasFocus = false
                 return true
             }
             return false // Let the text field handle it
@@ -354,7 +356,7 @@ struct PickerView: View {
 
         // Printable characters: auto-switch to search and type
         if !hasModifier && !characters.isEmpty && !characters.contains(where: \.isNewline) {
-            searchFieldHasFocus = true
+            viewModel.searchFieldHasFocus = true
             viewModel.searchText.append(characters)
             return true
         }

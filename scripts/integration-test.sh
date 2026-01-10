@@ -187,6 +187,19 @@ name=\"searchText\"
 value=\"/\""
 }
 
+# Test: TAB toggles focus between list and search field
+test_tab_focus() {
+    run_gui_test "TAB toggles focus" \
+        "wait:100
+key:tab
+wait:50
+key:tab
+quit" \
+        "name=\"searchFieldHasFocus\"
+value=true
+value=false"
+}
+
 # Test: Select all tabs
 test_select_all() {
     run_gui_test "Select all tabs" \
@@ -233,6 +246,7 @@ run_tests() {
             number) test_number_selection ;;
             ctrl_number) test_ctrl_number_selection ;;
             slash) test_slash_search ;;
+            tab_focus) test_tab_focus ;;
             select_all) test_select_all ;;
             toggle_select_all) test_toggle_select_all ;;
             escape) test_escape ;;
@@ -240,7 +254,7 @@ run_tests() {
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, select_all, toggle_select_all, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, tab_focus, select_all, toggle_select_all, escape, unit, build"
                 exit 1
                 ;;
         esac
@@ -261,6 +275,7 @@ run_tests() {
         test_number_selection
         test_ctrl_number_selection
         test_slash_search
+        test_tab_focus
         test_select_all
         test_toggle_select_all
         test_escape

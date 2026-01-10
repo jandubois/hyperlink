@@ -16,6 +16,9 @@ class PickerViewModel: ObservableObject {
     /// Whether settings or help overlays are shown (used by keyboard handler)
     @Published var isShowingOverlay: Bool = false
 
+    /// Whether the search field has focus (vs the tab list)
+    @Published var searchFieldHasFocus: Bool = false
+
     /// The bundle ID of the app that was frontmost before Hyperlink opened
     let targetAppBundleID: String?
 
