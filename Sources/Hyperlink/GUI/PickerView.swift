@@ -193,7 +193,7 @@ struct PickerView: View {
             if viewModel.isExtracting {
                 Color.black.opacity(0.2)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                ProgressView("Extracting links...")
+                ProgressView(viewModel.extractionStatus)
                     .padding()
                     .background(Color(NSColor.windowBackgroundColor))
                     .cornerRadius(8)

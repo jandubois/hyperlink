@@ -31,6 +31,9 @@ class PickerViewModel: ObservableObject {
     /// Whether link extraction is in progress
     @Published var isExtracting: Bool = false
 
+    /// Status message shown during extraction
+    @Published var extractionStatus: String = "Extracting links..."
+
     /// The bundle ID of the app that was frontmost before Hyperlink opened
     let targetAppBundleID: String?
 
@@ -500,6 +503,7 @@ class PickerViewModel: ObservableObject {
     ) {
         guard !isExtracting else { return }
         isExtracting = true
+        extractionStatus = "Getting page from \(browserName)..."
 
         Task {
             defer { isExtracting = false }
@@ -511,11 +515,18 @@ class PickerViewModel: ObservableObject {
                     bundleIdentifier: bundleIdentifier,
                     windowIndex: windowIndex,
                     tabIndex: tabIndex,
-                    tabURL: tab.url
+                    tabURL: tab.url,
+                    onFallback: { [weak self] in
+                        Task { @MainActor in
+                            self?.extractionStatus = "Fetching URL directly..."
+                        }
+                    }
                 )
 
+                extractionStatus = "Parsing links..."
+
                 if result.usedHTTPFallback {
-                    showToast("Using cached page (no auth)")
+                    showToast("Used direct fetch (no auth)")
                 }
 
                 // Parse links from HTML

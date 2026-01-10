@@ -45,33 +45,18 @@ enum PageSourceFetcher {
         bundleIdentifier: String,
         windowIndex: Int,
         tabIndex: Int,
-        tabURL: URL
+        tabURL: URL,
+        onFallback: (@Sendable () -> Void)? = nil
     ) async throws -> PageSourceResult {
         // Try browser-specific methods first, running on background thread
         // to avoid blocking the main thread with AppleScript execution
         do {
-            let html = try await withThrowingTaskGroup(of: String.self) { group in
-                // Task to fetch from browser
-                group.addTask {
-                    try fetchFromBrowser(
-                        browserName: browserName,
-                        bundleIdentifier: bundleIdentifier,
-                        windowIndex: windowIndex,
-                        tabIndex: tabIndex
-                    )
-                }
-
-                // Timeout task
-                group.addTask {
-                    try await Task.sleep(for: .seconds(10))
-                    throw PageSourceError.scriptError("Timed out waiting for browser")
-                }
-
-                // Return first result, cancel the other
-                let result = try await group.next()!
-                group.cancelAll()
-                return result
-            }
+            let html = try await fetchFromBrowserAsync(
+                browserName: browserName,
+                bundleIdentifier: bundleIdentifier,
+                windowIndex: windowIndex,
+                tabIndex: tabIndex
+            )
             return PageSourceResult(html: html, usedHTTPFallback: false)
         } catch PageSourceError.browserNotSupported {
             // Fall through to HTTP
@@ -81,9 +66,63 @@ enum PageSourceFetcher {
             // For other errors (including timeout), try HTTP fallback
         }
 
+        // Notify caller we're falling back to HTTP
+        onFallback?()
+
         // HTTP fallback
         let html = try await fetchViaHTTP(url: tabURL)
         return PageSourceResult(html: html, usedHTTPFallback: true)
+    }
+
+    /// Runs the browser fetch on a background queue with timeout
+    private static func fetchFromBrowserAsync(
+        browserName: String,
+        bundleIdentifier: String,
+        windowIndex: Int,
+        tabIndex: Int
+    ) async throws -> String {
+        let timeoutSeconds = 10.0
+
+        return try await withCheckedThrowingContinuation { continuation in
+            // Use a class to track whether we've already resumed
+            final class State: @unchecked Sendable {
+                var hasResumed = false
+                let lock = NSLock()
+
+                func tryResume(with result: Result<String, Error>, continuation: CheckedContinuation<String, Error>) {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    guard !hasResumed else { return }
+                    hasResumed = true
+                    continuation.resume(with: result)
+                }
+            }
+
+            let state = State()
+
+            // Run fetch on background queue
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let html = try fetchFromBrowser(
+                        browserName: browserName,
+                        bundleIdentifier: bundleIdentifier,
+                        windowIndex: windowIndex,
+                        tabIndex: tabIndex
+                    )
+                    state.tryResume(with: .success(html), continuation: continuation)
+                } catch {
+                    state.tryResume(with: .failure(error), continuation: continuation)
+                }
+            }
+
+            // Timeout
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds) {
+                state.tryResume(
+                    with: .failure(PageSourceError.scriptError("Timed out after \(Int(timeoutSeconds))s")),
+                    continuation: continuation
+                )
+            }
+        }
     }
 
     private static func fetchFromBrowser(
