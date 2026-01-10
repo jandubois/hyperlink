@@ -16,6 +16,9 @@ class PickerViewModel: ObservableObject {
     /// Whether settings or help overlays are shown (used by keyboard handler)
     @Published var isShowingOverlay: Bool = false
 
+    /// Whether a sub-overlay (like app picker popover) is shown inside the main overlay
+    @Published var isShowingSubOverlay: Bool = false
+
     /// Whether the search field has focus (vs the tab list)
     @Published var searchFieldHasFocus: Bool = false
 

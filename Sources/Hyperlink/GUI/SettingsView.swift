@@ -5,6 +5,7 @@ import AppKit
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     let currentTab: TabInfo?
+    @Binding var isShowingSubOverlay: Bool
     let onDismiss: () -> Void
 
     @State private var selectedGroupIndex: Int = 0
@@ -55,7 +56,8 @@ struct SettingsView: View {
                 // Groups sidebar
                 GroupsSidebar(
                     settings: $preferences.transformSettings,
-                    selectedIndex: $selectedGroupIndex
+                    selectedIndex: $selectedGroupIndex,
+                    isShowingAppPicker: $isShowingSubOverlay
                 )
                 .frame(width: 140)
 
@@ -162,7 +164,7 @@ struct PreviewSection: View {
 struct GroupsSidebar: View {
     @Binding var settings: TransformSettings
     @Binding var selectedIndex: Int
-    @State private var showingAppPicker = false
+    @Binding var isShowingAppPicker: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -184,7 +186,8 @@ struct GroupsSidebar: View {
                             bundleID: group.bundleID,
                             name: group.displayName,
                             isSelected: selectedIndex == index + 1,
-                            isEnabled: group.isEnabled
+                            isEnabled: group.isEnabled,
+                            onDelete: { deleteAppGroup(at: index) }
                         )
                         .onTapGesture { selectedIndex = index + 1 }
                         .contextMenu {
@@ -204,18 +207,22 @@ struct GroupsSidebar: View {
             Divider()
 
             // Add app group button
-            Button(action: { showingAppPicker = true }) {
+            Button(action: { isShowingAppPicker = true }) {
                 Label("Add App", systemImage: "plus")
                     .font(.system(size: 12))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderless)
             .padding(8)
-            .popover(isPresented: $showingAppPicker) {
-                RunningAppsPicker { bundleID, displayName in
-                    addAppGroup(bundleID: bundleID, displayName: displayName)
-                    showingAppPicker = false
-                }
+            .popover(isPresented: $isShowingAppPicker) {
+                RunningAppsPicker(
+                    excludedBundleIDs: Set(settings.appGroups.map(\.bundleID)),
+                    onSelect: { bundleID, displayName in
+                        addAppGroup(bundleID: bundleID, displayName: displayName)
+                        isShowingAppPicker = false
+                    },
+                    onCancel: { isShowingAppPicker = false }
+                )
             }
         }
         .background(Color.secondary.opacity(0.05))
@@ -245,6 +252,9 @@ struct GroupRow: View {
     let name: String
     let isSelected: Bool
     let isEnabled: Bool
+    var onDelete: (() -> Void)? = nil
+
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -267,6 +277,15 @@ struct GroupRow: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
+
+            if let onDelete = onDelete, isHovering {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -275,19 +294,25 @@ struct GroupRow: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         )
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 
 /// Picker showing running applications
 struct RunningAppsPicker: View {
+    let excludedBundleIDs: Set<String>
     let onSelect: (String, String) -> Void
+    let onCancel: () -> Void
 
     private var runningApps: [(bundleID: String, name: String, icon: NSImage)] {
         NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .compactMap { app -> (String, String, NSImage)? in
                 guard let bundleID = app.bundleIdentifier,
-                      let name = app.localizedName else { return nil }
+                      let name = app.localizedName,
+                      !excludedBundleIDs.contains(bundleID) else { return nil }
                 return (bundleID, name, app.icon ?? NSImage())
             }
             .sorted { $0.name < $1.name }
@@ -295,32 +320,52 @@ struct RunningAppsPicker: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Select Application")
-                .font(.headline)
-                .padding()
+            HStack {
+                Text("Select Application")
+                    .font(.headline)
+                Spacer()
+                Button(action: onCancel) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding()
 
             Divider()
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(runningApps, id: \.bundleID) { app in
-                        Button(action: { onSelect(app.bundleID, app.name) }) {
-                            HStack {
-                                Image(nsImage: app.icon)
-                                    .resizable()
-                                    .frame(width: 20, height: 20)
-                                Text(app.name)
-                                Spacer()
+            if runningApps.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No apps available")
+                        .foregroundColor(.secondary)
+                    Text("All running apps already have rules")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.8))
+                }
+                .frame(width: 250, height: 100)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(runningApps, id: \.bundleID) { app in
+                            Button(action: { onSelect(app.bundleID, app.name) }) {
+                                HStack {
+                                    Image(nsImage: app.icon)
+                                        .resizable()
+                                        .frame(width: 20, height: 20)
+                                    Text(app.name)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
                     }
                 }
+                .frame(width: 250, height: 300)
             }
-            .frame(width: 250, height: 300)
         }
     }
 }

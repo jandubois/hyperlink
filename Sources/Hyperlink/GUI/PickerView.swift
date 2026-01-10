@@ -172,6 +172,7 @@ struct PickerView: View {
                     currentTab: viewModel.highlightedIndex.flatMap { index in
                         index < viewModel.filteredTabs.count ? viewModel.filteredTabs[index] : nil
                     },
+                    isShowingSubOverlay: $viewModel.isShowingSubOverlay,
                     onDismiss: { showSettings = false }
                 )
             }
@@ -207,8 +208,13 @@ struct PickerView: View {
         // Don't process most keys while an overlay (settings/help) is shown
         if viewModel.isShowingOverlay {
             if event.keyCode == 53 { // Escape closes overlays
-                showSettings = false
-                showHelp = false
+                if viewModel.isShowingSubOverlay {
+                    // Close sub-overlay (e.g., app picker popover) first
+                    viewModel.isShowingSubOverlay = false
+                } else {
+                    showSettings = false
+                    showHelp = false
+                }
                 return true
             }
             return false
