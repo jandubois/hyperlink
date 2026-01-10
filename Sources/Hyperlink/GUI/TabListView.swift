@@ -89,6 +89,9 @@ struct TabRowView: View {
     var onOpenInBrowser: (() -> Void)? = nil
 
     @State private var isHovering = false
+    @State private var showPreview = false
+    @State private var previewMetadata: OpenGraphMetadata?
+    @State private var hoverTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -136,6 +139,9 @@ struct TabRowView: View {
                     .lineLimit(1)
                     .foregroundColor(.secondary)
             }
+            .popover(isPresented: $showPreview, arrowEdge: .trailing) {
+                LinkPreviewView(url: tab.url, metadata: previewMetadata)
+            }
 
             Spacer()
 
@@ -164,10 +170,83 @@ struct TabRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+            if hovering {
+                // Start preview fetch after delay
+                hoverTask = Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return }
+                    let metadata = await OpenGraphCache.shared.fetch(for: tab.url)
+                    guard !Task.isCancelled else { return }
+                    if metadata != nil {
+                        previewMetadata = metadata
+                        showPreview = true
+                    }
+                }
+            } else {
+                // Cancel pending fetch and hide preview
+                hoverTask?.cancel()
+                hoverTask = nil
+                showPreview = false
+            }
         }
         .onTapGesture {
             onSelect()
         }
+    }
+}
+
+/// Preview popover showing Open Graph metadata
+struct LinkPreviewView: View {
+    let url: URL
+    let metadata: OpenGraphMetadata?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // OG Image
+            if let imageURL = metadata?.imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: 280, maxHeight: 150)
+                            .clipped()
+                    case .failure:
+                        EmptyView()
+                    case .empty:
+                        ProgressView()
+                            .frame(width: 280, height: 100)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+            }
+
+            // Title
+            if let title = metadata?.title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(2)
+                    .foregroundColor(.primary)
+            }
+
+            // Description
+            if let description = metadata?.description, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 12))
+                    .lineLimit(4)
+                    .foregroundColor(.secondary)
+            }
+
+            // URL
+            Text(url.host ?? url.absoluteString)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(width: 300)
     }
 }
 
