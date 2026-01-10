@@ -22,20 +22,19 @@ private class CommandQueue: @unchecked Sendable {
 /// Reads and executes test commands from stdin
 /// Commands:
 /// - wait:<ms>          - Wait for specified milliseconds
-/// - key:<keyname>      - Simulate key press (down, up, return, escape, 1-9, ctrl+1-9, /, etc.)
+/// - key:<keyname>      - Simulate key press (down, up, return, escape, 1-9, ctrl+1-9, etc.)
 /// - click:<row>        - Click on tab row
 /// - search:<text>      - Type in search field
 /// - browser:<index>    - Switch to browser at index
-/// - focus_search       - Simulate clicking the search field (activates search mode)
 /// - select_all         - Select all visible tabs
 /// - deselect_all       - Deselect all visible tabs
 /// - toggle_select_all  - Toggle select all / deselect all
 /// - quit               - Exit the app
 ///
 /// Key notes:
-/// - 1-9 selects tabs only when search is empty and / wasn't pressed
+/// - 1-9 selects tabs only when search is empty
 /// - ctrl+1-9 always selects tabs (even with search text)
-/// - / activates search focus mode when inactive; adds to search text when already active
+/// - TAB switches focus between list and search field
 @MainActor
 class TestCommandReader: NSObject {
     private var inputThread: Thread?
@@ -113,8 +112,9 @@ class TestCommandReader: NSObject {
             }
 
         case "focus_search", "click_search":
-            viewModel?.searchFocusRequested = true
-            TestLogger.logState("searchFocusRequested", value: true)
+            // Focus is now controlled by TAB key - this command is deprecated
+            // Just log that it was requested
+            TestLogger.logAction("focus_search", details: ["note": "use TAB key to switch focus"])
 
         case "select_all":
             viewModel?.selectAllFilteredTabs()
@@ -205,14 +205,9 @@ class TestCommandReader: NSObject {
             selectTab(number: number)
 
         case "/", "slash":
-            // `/` activates search focus mode when inactive, otherwise adds to search
-            if viewModel?.searchText.isEmpty ?? true && !(viewModel?.searchFocusRequested ?? false) {
-                viewModel?.searchFocusRequested = true
-                TestLogger.logState("searchFocusRequested", value: true)
-            } else {
-                viewModel?.searchText.append("/")
-                TestLogger.logState("searchText", value: viewModel?.searchText ?? "")
-            }
+            // `/` now just appends to search text (no special focus behavior)
+            viewModel?.searchText.append("/")
+            TestLogger.logState("searchText", value: viewModel?.searchText ?? "")
 
         default:
             break

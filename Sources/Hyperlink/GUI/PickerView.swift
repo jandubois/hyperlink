@@ -6,18 +6,7 @@ struct PickerView: View {
     let onDismiss: () -> Void
     @State private var showHelp = false
     @State private var showSettings = false
-
-    /// Search field is active when it has text or user activated it with / or click
-    private var searchFieldIsActive: Binding<Bool> {
-        Binding(
-            get: { !viewModel.searchText.isEmpty || viewModel.searchFocusRequested },
-            set: { newValue in
-                if newValue {
-                    viewModel.searchFocusRequested = true
-                }
-            }
-        )
-    }
+    @State private var searchFieldHasFocus = false
 
     /// Icon for the master checkbox based on selection state
     private var masterCheckboxIcon: String {
@@ -77,8 +66,7 @@ struct PickerView: View {
                 // Search field
                 SearchField(
                     text: $viewModel.searchText,
-                    isActive: searchFieldIsActive,
-                    onActivate: { viewModel.searchFocusRequested = true }
+                    isFocused: $searchFieldHasFocus
                 )
 
                 // Selection count
@@ -212,10 +200,8 @@ struct PickerView: View {
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
         // Don't process most keys while an overlay (settings/help) is shown
-        // Check viewModel.isShowingOverlay since it's a reference type that stays current
         if viewModel.isShowingOverlay {
-            // Only handle Escape to close overlays
-            if event.keyCode == 53 {
+            if event.keyCode == 53 { // Escape closes overlays
                 showSettings = false
                 showHelp = false
                 return true
@@ -223,92 +209,21 @@ struct PickerView: View {
             return false
         }
 
-        // Check if a text field has focus - if so, let it handle most keys
-        let firstResponder = NSApp.keyWindow?.firstResponder
-        let textFieldHasFocus = firstResponder is NSText || firstResponder is NSTextField
-
-        let hasModifier = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
         let hasCmd = event.modifierFlags.contains(.command)
         let hasCtrl = event.modifierFlags.contains(.control)
+        let hasModifier = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
         let char = event.charactersIgnoringModifiers ?? ""
         let characters = event.characters ?? ""
 
-        // Cmd+, opens settings (always handle this)
+        // === Always-handled keys (regardless of focus) ===
+
+        // Cmd+, opens settings
         if hasCmd && char == "," {
             showSettings = true
             return true
         }
 
-        // If a text field has focus, only handle specific shortcuts, let the rest pass through
-        if textFieldHasFocus {
-            // Only handle Escape to clear/close, and Cmd shortcuts
-            if event.keyCode == 53 { // Escape
-                if !viewModel.searchText.isEmpty {
-                    viewModel.searchText = ""
-                    return true
-                }
-                return false // Let escape propagate to close window
-            }
-            // Let all other keys go to the text field
-            return false
-        }
-
-        // `?` shows help when search is not active
-        if characters == "?" && !hasModifier {
-            let searchIsActive = viewModel.searchFocusRequested || !viewModel.searchText.isEmpty
-            if !searchIsActive {
-                showHelp = true
-                return true
-            }
-            // Search is active, add `?` to search text
-            viewModel.searchText.append("?")
-            return true
-        }
-
-        // Cmd+1-9 for browser switching
-        if hasCmd,
-           let number = Int(char),
-           number >= 1 && number <= 9 {
-            let index = number - 1
-            if index < viewModel.browsers.count {
-                viewModel.selectedBrowserIndex = index
-                // Note: selectedTabs cleared and highlightActiveTab called via onChange
-            }
-            return true
-        }
-
-        // Ctrl+1-9 OR plain 1-9 (when search is empty and no / pressed) for tab selection
-        if let number = Int(char), number >= 1 && number <= 9 {
-            // Ctrl+1-9 always selects tabs
-            // Plain 1-9 only selects tabs when search is empty and / wasn't pressed
-            let shouldPassToSearch = viewModel.searchFocusRequested || !viewModel.searchText.isEmpty
-            if hasCtrl || (!hasModifier && !shouldPassToSearch) {
-                let index = number - 1
-                if index < viewModel.filteredTabs.count {
-                    let tab = viewModel.filteredTabs[index]
-                    viewModel.copyAndDismiss(tab: tab)
-                    onDismiss()
-                }
-                return true
-            }
-            // Append to search field, reset the focus flag
-            viewModel.searchFocusRequested = false
-            viewModel.searchText.append(characters)
-            return true
-        }
-
-        // `/` activates search mode when search is not active, otherwise types into search
-        if char == "/" && !hasModifier {
-            if viewModel.searchText.isEmpty && !viewModel.searchFocusRequested {
-                viewModel.searchFocusRequested = true
-                return true
-            }
-            // Search is already active, add `/` to search text
-            viewModel.searchText.append("/")
-            return true
-        }
-
-        // Arrow keys for navigation
+        // Navigation: up/down always work, left/right depend on focus and modifiers
         switch event.keyCode {
         case 125: // Down arrow
             viewModel.moveHighlight(by: 1)
@@ -317,12 +232,36 @@ struct PickerView: View {
             viewModel.moveHighlight(by: -1)
             return true
         case 123: // Left arrow
-            viewModel.switchBrowser(by: -1)
-            return true
+            // Cmd+Left always switches browser; plain Left only when list has focus
+            if hasCmd {
+                viewModel.switchBrowser(by: -1)
+                return true
+            } else if !searchFieldHasFocus {
+                viewModel.switchBrowser(by: -1)
+                return true
+            }
+            return false // Let text field handle cursor movement
         case 124: // Right arrow
-            viewModel.switchBrowser(by: 1)
+            // Cmd+Right always switches browser; plain Right only when list has focus
+            if hasCmd {
+                viewModel.switchBrowser(by: 1)
+                return true
+            } else if !searchFieldHasFocus {
+                viewModel.switchBrowser(by: 1)
+                return true
+            }
+            return false // Let text field handle cursor movement
+        case 48: // Tab - toggle focus between list and search
+            searchFieldHasFocus.toggle()
             return true
-        case 36: // Return
+        case 53: // Escape
+            if !viewModel.searchText.isEmpty {
+                viewModel.searchText = ""
+                searchFieldHasFocus = false
+                return true
+            }
+            return false // Let escape propagate to close window
+        case 36: // Return - copy and dismiss
             if let index = viewModel.highlightedIndex,
                index < viewModel.filteredTabs.count {
                 let tab = viewModel.filteredTabs[index]
@@ -330,35 +269,89 @@ struct PickerView: View {
                 onDismiss()
             }
             return true
-        case 51: // Delete/Backspace
+        default:
+            break
+        }
+
+        // Cmd+1-9 for browser switching (always works)
+        if hasCmd,
+           let number = Int(char),
+           number >= 1 && number <= 9 {
+            let index = number - 1
+            if index < viewModel.browsers.count {
+                viewModel.selectedBrowserIndex = index
+            }
+            return true
+        }
+
+        // Ctrl+1-9 for quick tab selection (always works)
+        if hasCtrl,
+           let number = Int(char),
+           number >= 1 && number <= 9 {
+            let index = number - 1
+            if index < viewModel.filteredTabs.count {
+                let tab = viewModel.filteredTabs[index]
+                viewModel.copyAndDismiss(tab: tab)
+                onDismiss()
+            }
+            return true
+        }
+
+        // === Focus-dependent keys ===
+
+        if searchFieldHasFocus {
+            // Search field has focus - let most keys pass through to the text field
+            // But handle backspace when search is empty to switch focus back
+            if event.keyCode == 51 && viewModel.searchText.isEmpty { // Backspace
+                searchFieldHasFocus = false
+                return true
+            }
+            return false // Let the text field handle it
+        }
+
+        // List has focus - handle shortcuts and auto-switch to search for typing
+
+        // `?` shows help
+        if characters == "?" && !hasModifier {
+            showHelp = true
+            return true
+        }
+
+        // 1-9 for quick tab selection
+        if let number = Int(char), number >= 1 && number <= 9, !hasModifier {
+            let index = number - 1
+            if index < viewModel.filteredTabs.count {
+                let tab = viewModel.filteredTabs[index]
+                viewModel.copyAndDismiss(tab: tab)
+                onDismiss()
+            }
+            return true
+        }
+
+        // Space toggles checkbox
+        if event.keyCode == 49 { // Space
+            if let index = viewModel.highlightedIndex {
+                viewModel.toggleSelection(at: index)
+            }
+            return true
+        }
+
+        // Backspace - delete from search if there's text
+        if event.keyCode == 51 { // Backspace
             if !viewModel.searchText.isEmpty {
                 viewModel.searchText.removeLast()
             }
             return true
-        case 49: // Space - toggle selection if search is empty, otherwise add to search
-            if viewModel.searchText.isEmpty && !viewModel.searchFocusRequested {
-                if let index = viewModel.highlightedIndex {
-                    viewModel.toggleSelection(at: index)
-                }
-                return true
-            }
-            viewModel.searchText.append(" ")
-            viewModel.searchFocusRequested = false
-            return true
-        case 53: // Escape
-            if !viewModel.searchText.isEmpty {
-                viewModel.searchText = ""
-                return true
-            }
-            return false // Let escape propagate to close window
-        default:
-            // Printable characters go to search (without modifiers)
-            if !hasModifier && !characters.isEmpty {
-                viewModel.searchText.append(characters)
-                return true
-            }
-            return false
         }
+
+        // Printable characters: auto-switch to search and type
+        if !hasModifier && !characters.isEmpty && !characters.contains(where: \.isNewline) {
+            searchFieldHasFocus = true
+            viewModel.searchText.append(characters)
+            return true
+        }
+
+        return false
     }
 }
 

@@ -4,15 +4,14 @@ import AppKit
 /// Search field for filtering tabs - uses a real NSTextField for proper input handling
 struct SearchField: NSViewRepresentable {
     @Binding var text: String
-    @Binding var isActive: Bool
-    var onActivate: (() -> Void)? = nil
+    @Binding var isFocused: Bool
 
     func makeNSView(context: Context) -> SearchFieldView {
         let view = SearchFieldView()
         view.textField.delegate = context.coordinator
         view.textField.target = context.coordinator
         view.textField.action = #selector(Coordinator.textFieldAction(_:))
-        view.onActivate = onActivate
+        context.coordinator.searchFieldView = view
         return view
     }
 
@@ -20,20 +19,34 @@ struct SearchField: NSViewRepresentable {
         if nsView.textField.stringValue != text {
             nsView.textField.stringValue = text
         }
-        nsView.updateActiveState(isActive: isActive, hasText: !text.isEmpty)
+        nsView.updateActiveState(isActive: isFocused, hasText: !text.isEmpty)
+
+        // Handle focus changes from parent
+        if isFocused {
+            if nsView.window?.firstResponder != nsView.textField &&
+               nsView.window?.firstResponder != nsView.textField.currentEditor() {
+                nsView.window?.makeFirstResponder(nsView.textField)
+            }
+        } else {
+            if nsView.window?.firstResponder == nsView.textField ||
+               nsView.window?.firstResponder == nsView.textField.currentEditor() {
+                nsView.window?.makeFirstResponder(nil)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isActive: $isActive)
+        Coordinator(text: $text, isFocused: $isFocused)
     }
 
     class Coordinator: NSObject, NSTextFieldDelegate {
         var text: Binding<String>
-        var isActive: Binding<Bool>
+        var isFocused: Binding<Bool>
+        weak var searchFieldView: SearchFieldView?
 
-        init(text: Binding<String>, isActive: Binding<Bool>) {
+        init(text: Binding<String>, isFocused: Binding<Bool>) {
             self.text = text
-            self.isActive = isActive
+            self.isFocused = isFocused
         }
 
         func controlTextDidChange(_ obj: Notification) {
@@ -43,12 +56,17 @@ struct SearchField: NSViewRepresentable {
         }
 
         func controlTextDidBeginEditing(_ obj: Notification) {
-            isActive.wrappedValue = true
+            isFocused.wrappedValue = true
         }
 
         func controlTextDidEndEditing(_ obj: Notification) {
-            if text.wrappedValue.isEmpty {
-                isActive.wrappedValue = false
+            // Only update if we're losing focus, not if text is just being committed
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, let view = self.searchFieldView else { return }
+                let currentResponder = view.window?.firstResponder
+                if currentResponder != view.textField && currentResponder != view.textField.currentEditor() {
+                    self.isFocused.wrappedValue = false
+                }
             }
         }
 
@@ -63,7 +81,6 @@ class SearchFieldView: NSView {
     let textField = NSTextField()
     private let iconView = NSImageView()
     private let clearButton = NSButton()
-    var onActivate: (() -> Void)?
 
     private var isActive = false
     private var hasText = false
@@ -151,6 +168,5 @@ class SearchFieldView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(textField)
-        onActivate?()
     }
 }

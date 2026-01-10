@@ -175,39 +175,16 @@ key=\"ctrl+1\"
 type=\"copy\""
 }
 
-# Test: Slash key activates search focus mode
+# Test: Slash key adds to search text (no special behavior)
 test_slash_search() {
-    # Pressing / sets searchFocusRequested
-    run_gui_test "Slash activates search focus" \
+    # Pressing / now just adds to search text
+    run_gui_test "Slash adds to search" \
         "wait:100
 key:/
 quit" \
         "key=\"/\"
-name=\"searchFocusRequested\"
-value=true"
-}
-
-# Test: Second slash adds to search text (not swallowed)
-test_slash_passthrough() {
-    # First / activates, second / should add to search text
-    run_gui_test "Second slash adds to search" \
-        "wait:100
-key:/
-key:/
-quit" \
-        "name=\"searchFocusRequested\"
 name=\"searchText\"
 value=\"/\""
-}
-
-# Test: Clicking search field activates search mode
-test_click_search() {
-    run_gui_test "Click search activates focus" \
-        "wait:100
-focus_search
-quit" \
-        "name=\"searchFocusRequested\"
-value=true"
 }
 
 # Test: Select all tabs
@@ -256,8 +233,6 @@ run_tests() {
             number) test_number_selection ;;
             ctrl_number) test_ctrl_number_selection ;;
             slash) test_slash_search ;;
-            slash_passthrough) test_slash_passthrough ;;
-            click_search) test_click_search ;;
             select_all) test_select_all ;;
             toggle_select_all) test_toggle_select_all ;;
             escape) test_escape ;;
@@ -265,7 +240,7 @@ run_tests() {
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, slash_passthrough, click_search, select_all, toggle_select_all, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, select_all, toggle_select_all, escape, unit, build"
                 exit 1
                 ;;
         esac
@@ -286,8 +261,6 @@ run_tests() {
         test_number_selection
         test_ctrl_number_selection
         test_slash_search
-        test_slash_passthrough
-        test_click_search
         test_select_all
         test_toggle_select_all
         test_escape
