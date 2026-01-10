@@ -13,7 +13,7 @@ struct TabListView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(filteredTabs.enumerated()), id: \.offset) { index, tab in
+                    ForEach(Array(filteredTabs.enumerated()), id: \.element) { index, tab in
                         TabRowView(
                             tab: tab,
                             index: index,

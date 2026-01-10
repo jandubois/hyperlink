@@ -1,7 +1,7 @@
 import AppKit
 
 /// Information about a single browser tab
-struct TabInfo: Sendable, Codable {
+struct TabInfo: Sendable, Codable, Hashable {
     let index: Int
     let title: String
     let url: URL
