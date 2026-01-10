@@ -499,10 +499,14 @@ class PickerViewModel: ObservableObject {
 
     /// Extract links from a specific tab in the current browser
     func extractLinksFromTab(_ tab: TabInfo) {
-        // Need to find the browser info for this tab
-        guard selectedBrowserIndex >= extractedSourceCount,
-              let browserData = browsers[safe: selectedBrowserIndex - extractedSourceCount] else {
-            showToast("Cannot extract links from extracted sources")
+        // Check if viewing an extracted source (use HTTP-only fetch)
+        if selectedBrowserIndex < extractedSourceCount {
+            extractLinksViaHTTP(from: tab)
+            return
+        }
+
+        // Browser tab - find window and tab indices
+        guard let browserData = browsers[safe: selectedBrowserIndex - extractedSourceCount] else {
             return
         }
 
@@ -572,6 +576,59 @@ class PickerViewModel: ObservableObject {
                 if result.usedHTTPFallback {
                     showToast("Used direct fetch (no auth)")
                 }
+
+                // Parse links from HTML
+                let parsedLinks = HTMLLinkParser.extractLinks(from: result.html, baseURL: tab.url)
+
+                if parsedLinks.isEmpty {
+                    showToast("No links found on page")
+                    return
+                }
+
+                // Create extracted source
+                let source = ExtractedLinksSource.create(
+                    from: parsedLinks,
+                    sourceURL: tab.url,
+                    sourceTitle: tab.title
+                )
+
+                // Add to list and select it
+                extractedSources.insert(source, at: 0)
+                selectedBrowserIndex = 0
+                selectedTabs.removeAll()
+                highlightedIndex = 0
+
+                // Start fetching titles and favicon
+                source.startTitleFetching()
+                source.fetchFavicon()
+
+            } catch {
+                showToast("Failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Extract links from a URL using HTTP fetch only (for extracted sources)
+    private func extractLinksViaHTTP(from tab: TabInfo) {
+        // Check if we already have an extracted source for this URL
+        if let existingIndex = extractedSources.firstIndex(where: { $0.sourceURL == tab.url }) {
+            selectedBrowserIndex = existingIndex
+            selectedTabs.removeAll()
+            highlightedIndex = 0
+            return
+        }
+
+        guard !isExtracting else { return }
+        isExtracting = true
+        extractionStatus = "Fetching page..."
+
+        Task {
+            defer { isExtracting = false }
+
+            do {
+                let result = try await PageSourceFetcher.fetchSource(from: tab.url)
+
+                extractionStatus = "Parsing links..."
 
                 // Parse links from HTML
                 let parsedLinks = HTMLLinkParser.extractLinks(from: result.html, baseURL: tab.url)

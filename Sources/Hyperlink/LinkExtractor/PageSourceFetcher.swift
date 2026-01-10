@@ -32,6 +32,14 @@ struct PageSourceResult {
 
 /// Fetches page source from browser tabs
 enum PageSourceFetcher {
+    /// Fetches HTML source directly via HTTP
+    /// - Parameter url: The URL to fetch
+    /// - Returns: The page source result
+    static func fetchSource(from url: URL) async throws -> PageSourceResult {
+        let html = try await fetchViaHTTP(url: url)
+        return PageSourceResult(html: html, usedHTTPFallback: true)
+    }
+
     /// Fetches the HTML source of a tab
     /// - Parameters:
     ///   - browserName: The browser's display name (e.g., "Safari", "Google Chrome")
