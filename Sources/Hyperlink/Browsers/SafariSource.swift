@@ -120,16 +120,23 @@ enum AppleScriptRunner {
         let errorPipe = Pipe()
         process.standardOutput = pipe
         process.standardError = errorPipe
+        process.standardInput = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             throw LinkSourceError.scriptError("Failed to run osascript: \(error)")
         }
 
+        // IMPORTANT: Read stdout/stderr BEFORE waitUntilExit to avoid pipe buffer deadlock.
+        // If the output is large enough to fill the pipe buffer (~64KB), the child process
+        // will block waiting to write, and we'll block waiting for it to exit.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+        process.waitUntilExit()
+
         if process.terminationStatus != 0 {
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
 
             if errorMessage.contains("not allowed") || errorMessage.contains("-1743") {
@@ -138,7 +145,6 @@ enum AppleScriptRunner {
             throw LinkSourceError.scriptError(errorMessage.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }

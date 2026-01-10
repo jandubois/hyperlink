@@ -158,8 +158,7 @@ enum PageSourceFetcher {
     private static func fetchFromSafari(windowIndex: Int, tabIndex: Int) throws -> String {
         let script = """
             tell application "Safari"
-                set theTab to tab \(tabIndex) of window \(windowIndex)
-                return source of theTab
+                return source of tab \(tabIndex) of window \(windowIndex)
             end tell
             """
 
