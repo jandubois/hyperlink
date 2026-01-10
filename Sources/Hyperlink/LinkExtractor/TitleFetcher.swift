@@ -87,13 +87,7 @@ actor TitleFetcher {
         var title = String(html[titleRange])
 
         // Decode HTML entities
-        title = title
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&#39;", with: "'")
-            .replacingOccurrences(of: "&nbsp;", with: " ")
+        title = HTMLEntityDecoder.decode(title)
 
         // Normalize whitespace
         title = title.components(separatedBy: .whitespacesAndNewlines)

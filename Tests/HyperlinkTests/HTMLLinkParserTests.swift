@@ -82,6 +82,17 @@ struct HTMLLinkParserTests {
         #expect(links[0].anchorText == "R&D > Sales")
     }
 
+    @Test("Decodes numeric HTML entities")
+    func decodesNumericEntities() {
+        let html = """
+            <a href="https://example.com">SUSE &#x2013; L&#xF6;sungen f&#xFC;r Server</a>
+            """
+        let links = HTMLLinkParser.extractLinks(from: html, baseURL: baseURL)
+
+        #expect(links.count == 1)
+        #expect(links[0].anchorText == "SUSE – Lösungen für Server")
+    }
+
     @Test("Handles empty anchor text")
     func handlesEmptyAnchorText() {
         let html = """
