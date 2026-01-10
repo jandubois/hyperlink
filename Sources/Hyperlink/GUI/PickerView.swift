@@ -91,7 +91,6 @@ struct PickerView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .keyboardShortcut(.return, modifiers: .command)
                 }
             }
             .padding(.horizontal, 12)
@@ -266,8 +265,13 @@ struct PickerView: View {
             }
             return false // Let escape propagate to close window
         case 36: // Return - copy and dismiss
-            if let index = viewModel.highlightedIndex,
+            if !viewModel.selectedTabs.isEmpty {
+                // Copy checkbox-selected tabs
+                viewModel.copySelected()
+                onDismiss()
+            } else if let index = viewModel.highlightedIndex,
                index < viewModel.filteredTabs.count {
+                // Copy highlighted tab
                 let tab = viewModel.filteredTabs[index]
                 viewModel.copyAndDismiss(tab: tab)
                 onDismiss()
