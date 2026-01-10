@@ -31,9 +31,9 @@ struct PickerView: View {
         VStack(spacing: 0) {
             // Header row: browser tabs (if multiple) + settings/help icons
             HStack(spacing: 8) {
-                if viewModel.browsers.count > 1 {
+                if viewModel.allBrowserData.count > 1 {
                     BrowserTabBar(
-                        browsers: viewModel.browsers,
+                        browsers: viewModel.allBrowserData,
                         selectedIndex: $viewModel.selectedBrowserIndex
                     )
                 }
@@ -142,7 +142,11 @@ struct PickerView: View {
                     onSelect: { tab in
                         viewModel.copyAndDismiss(tab: tab)
                         onDismiss()
-                    }
+                    },
+                    onExtract: { tab, _ in
+                        viewModel.extractLinksFromTab(tab)
+                    },
+                    isExtractedSource: viewModel.isViewingExtractedSource
                 )
             }
         }
@@ -175,6 +179,24 @@ struct PickerView: View {
                     isShowingSubOverlay: $viewModel.isShowingSubOverlay,
                     onDismiss: { showSettings = false }
                 )
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = viewModel.toastMessage {
+                ToastView(message: toast)
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.toastMessage)
+            }
+        }
+        .overlay {
+            if viewModel.isExtracting {
+                Color.black.opacity(0.2)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                ProgressView("Extracting links...")
+                    .padding()
+                    .background(Color(NSColor.windowBackgroundColor))
+                    .cornerRadius(8)
             }
         }
         .onAppear {
@@ -289,12 +311,18 @@ struct PickerView: View {
             break
         }
 
+        // Cmd+Enter for link extraction
+        if hasCmd && event.keyCode == 36 {
+            viewModel.extractLinksFromHighlightedTab()
+            return true
+        }
+
         // Cmd+1-9 for browser switching (always works)
         if hasCmd,
            let number = Int(char),
            number >= 1 && number <= 9 {
             let index = number - 1
-            if index < viewModel.browsers.count {
+            if index < viewModel.allBrowserData.count {
                 viewModel.selectedBrowserIndex = index
             }
             return true

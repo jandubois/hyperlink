@@ -8,6 +8,8 @@ struct TabListView: View {
     @Binding var selectedTabs: Set<PickerViewModel.TabIdentifier>
     @Binding var highlightedIndex: Int?
     let onSelect: (TabInfo) -> Void
+    var onExtract: ((TabInfo, Int) -> Void)? = nil
+    var isExtractedSource: Bool = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -19,8 +21,10 @@ struct TabListView: View {
                             index: index,
                             isHighlighted: highlightedIndex == index,
                             isChecked: isTabSelected(tab),
+                            showExtractButton: !isExtractedSource,
                             onToggleCheck: { toggleSelection(tab) },
-                            onSelect: { onSelect(tab) }
+                            onSelect: { onSelect(tab) },
+                            onExtract: { onExtract?(tab, index) }
                         )
                     }
                 }
@@ -79,8 +83,12 @@ struct TabRowView: View {
     let index: Int
     let isHighlighted: Bool
     let isChecked: Bool
+    var showExtractButton: Bool = true
     let onToggleCheck: () -> Void
     let onSelect: () -> Void
+    var onExtract: (() -> Void)? = nil
+
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -130,11 +138,25 @@ struct TabRowView: View {
             }
 
             Spacer()
+
+            // Extract links button (shown on hover for real browser tabs)
+            if showExtractButton && isHovering {
+                Button(action: { onExtract?() }) {
+                    Image(systemName: "link")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Extract links from this page (Cmd+Enter)")
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(isHighlighted ? Color.accentColor.opacity(0.15) : Color.clear)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
         .onTapGesture {
             onSelect()
         }

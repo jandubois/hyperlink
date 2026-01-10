@@ -22,6 +22,15 @@ class PickerViewModel: ObservableObject {
     /// Whether the search field has focus (vs the tab list)
     @Published var searchFieldHasFocus: Bool = false
 
+    /// Toast message to display (auto-dismisses)
+    @Published var toastMessage: String? = nil
+
+    /// Extracted link sources (pseudo-browsers)
+    @Published var extractedSources: [ExtractedLinksSource] = []
+
+    /// Whether link extraction is in progress
+    @Published var isExtracting: Bool = false
+
     /// The bundle ID of the app that was frontmost before Hyperlink opened
     let targetAppBundleID: String?
 
@@ -45,8 +54,9 @@ class PickerViewModel: ObservableObject {
     }
 
     var currentWindows: [WindowInfo] {
-        guard selectedBrowserIndex < browsers.count else { return [] }
-        return browsers[selectedBrowserIndex].windows
+        let allData = allBrowserData
+        guard selectedBrowserIndex < allData.count else { return [] }
+        return allData[selectedBrowserIndex].windows
     }
 
     var allCurrentTabs: [TabInfo] {
@@ -289,12 +299,13 @@ class PickerViewModel: ObservableObject {
     }
 
     func switchBrowser(by delta: Int) {
-        guard browsers.count > 1 else { return }
+        let count = allBrowserData.count
+        guard count > 1 else { return }
 
         var newIndex = selectedBrowserIndex + delta
         if newIndex < 0 {
-            newIndex = browsers.count - 1
-        } else if newIndex >= browsers.count {
+            newIndex = count - 1
+        } else if newIndex >= count {
             newIndex = 0
         }
 
@@ -406,5 +417,165 @@ class PickerViewModel: ObservableObject {
         }
         // Fallback
         return TabIdentifier(browserIndex: selectedBrowserIndex, windowIndex: 0, tabIndex: tab.index)
+    }
+
+    // MARK: - Link Extraction
+
+    /// Number of extracted sources (pseudo-browsers at the start of the browser list)
+    var extractedSourceCount: Int {
+        extractedSources.count
+    }
+
+    /// Whether the currently selected browser is an extracted source
+    var isViewingExtractedSource: Bool {
+        selectedBrowserIndex < extractedSourceCount
+    }
+
+    /// The currently selected extracted source, if any
+    var currentExtractedSource: ExtractedLinksSource? {
+        guard isViewingExtractedSource else { return nil }
+        return extractedSources[selectedBrowserIndex]
+    }
+
+    /// All browser data including extracted sources
+    var allBrowserData: [BrowserData] {
+        let extractedBrowsers = extractedSources.map { source in
+            BrowserData(
+                name: source.displayName,
+                icon: source.favicon ?? NSImage(systemSymbolName: "link", accessibilityDescription: "Extracted links") ?? NSImage(),
+                windows: [source.asWindowInfo()]
+            )
+        }
+        return extractedBrowsers + browsers
+    }
+
+    /// Extract links from the highlighted tab
+    func extractLinksFromHighlightedTab() {
+        guard let index = highlightedIndex,
+              index < filteredTabs.count else {
+            return
+        }
+        extractLinksFromTab(filteredTabs[index])
+    }
+
+    /// Extract links from a specific tab in the current browser
+    func extractLinksFromTab(_ tab: TabInfo) {
+        // Need to find the browser info for this tab
+        guard selectedBrowserIndex >= extractedSourceCount,
+              let browserData = browsers[safe: selectedBrowserIndex - extractedSourceCount] else {
+            showToast("Cannot extract links from extracted sources")
+            return
+        }
+
+        // Find window and tab indices
+        var windowIndex = 1
+        var tabIndex = 1
+        for window in browserData.windows {
+            if let foundTab = window.tabs.first(where: { $0.url == tab.url && $0.title == tab.title }) {
+                tabIndex = foundTab.index
+                break
+            }
+            windowIndex += 1
+        }
+
+        // Get bundle identifier for the browser
+        let browserBundleID = bundleIdentifier(for: browserData.name)
+
+        extractLinks(
+            from: tab,
+            browserName: browserData.name,
+            bundleIdentifier: browserBundleID,
+            windowIndex: windowIndex,
+            tabIndex: tabIndex
+        )
+    }
+
+    /// Extract links from a specific tab
+    func extractLinks(
+        from tab: TabInfo,
+        browserName: String,
+        bundleIdentifier: String,
+        windowIndex: Int,
+        tabIndex: Int
+    ) {
+        guard !isExtracting else { return }
+        isExtracting = true
+
+        Task {
+            defer { isExtracting = false }
+
+            do {
+                // Fetch page source
+                let result = try await PageSourceFetcher.fetchSource(
+                    browserName: browserName,
+                    bundleIdentifier: bundleIdentifier,
+                    windowIndex: windowIndex,
+                    tabIndex: tabIndex,
+                    tabURL: tab.url
+                )
+
+                if result.usedHTTPFallback {
+                    showToast("Using cached page (no auth)")
+                }
+
+                // Parse links from HTML
+                let parsedLinks = HTMLLinkParser.extractLinks(from: result.html, baseURL: tab.url)
+
+                if parsedLinks.isEmpty {
+                    showToast("No links found on page")
+                    return
+                }
+
+                // Create extracted source
+                let source = ExtractedLinksSource.create(
+                    from: parsedLinks,
+                    sourceURL: tab.url,
+                    sourceTitle: tab.title
+                )
+
+                // Add to list and select it
+                extractedSources.insert(source, at: 0)
+                selectedBrowserIndex = 0
+                selectedTabs.removeAll()
+                highlightedIndex = 0
+
+                // Start fetching titles and favicon
+                source.startTitleFetching()
+                source.fetchFavicon()
+
+            } catch {
+                showToast("Failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Show a toast message that auto-dismisses
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if toastMessage == message {
+                toastMessage = nil
+            }
+        }
+    }
+
+    /// Get bundle identifier for a browser name
+    private func bundleIdentifier(for browserName: String) -> String {
+        switch browserName.lowercased() {
+        case "safari": return "com.apple.Safari"
+        case "google chrome", "chrome": return "com.google.Chrome"
+        case "arc": return "company.thebrowser.Browser"
+        case "brave", "brave browser": return "com.brave.Browser"
+        case "microsoft edge", "edge": return "com.microsoft.edgemac"
+        case "orion": return "com.kagi.kagimacOS"
+        default: return "com.apple.Safari"
+        }
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
