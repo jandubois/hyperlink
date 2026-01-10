@@ -92,6 +92,7 @@ struct TabRowView: View {
     @State private var showPreview = false
     @State private var previewMetadata: OpenGraphMetadata?
     @State private var isLoadingPreview = false
+    @State private var previewLoadFailed = false
     @State private var hoverTask: Task<Void, Never>?
 
     var body: some View {
@@ -141,7 +142,12 @@ struct TabRowView: View {
                     .foregroundColor(.secondary)
             }
             .popover(isPresented: $showPreview, arrowEdge: .trailing) {
-                LinkPreviewView(url: tab.url, metadata: previewMetadata, isLoading: isLoadingPreview)
+                LinkPreviewView(
+                    url: tab.url,
+                    metadata: previewMetadata,
+                    isLoading: isLoadingPreview,
+                    loadFailed: previewLoadFailed
+                )
             }
 
             Spacer()
@@ -177,8 +183,16 @@ struct TabRowView: View {
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
 
+                    // Check cache first - show immediately if available
+                    if let cached = await OpenGraphCache.shared.getCached(for: tab.url) {
+                        previewMetadata = cached
+                        showPreview = true
+                        return
+                    }
+
                     // Show popover with loading state
                     isLoadingPreview = true
+                    previewLoadFailed = false
                     showPreview = true
 
                     // Fetch metadata
@@ -188,6 +202,7 @@ struct TabRowView: View {
                     // Update with fetched data
                     isLoadingPreview = false
                     previewMetadata = metadata
+                    previewLoadFailed = (metadata == nil)
                 }
             } else {
                 // Cancel pending fetch and hide preview
@@ -195,6 +210,7 @@ struct TabRowView: View {
                 hoverTask = nil
                 showPreview = false
                 isLoadingPreview = false
+                previewLoadFailed = false
                 previewMetadata = nil
             }
         }
@@ -209,6 +225,7 @@ struct LinkPreviewView: View {
     let url: URL
     let metadata: OpenGraphMetadata?
     var isLoading: Bool = false
+    var loadFailed: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -260,8 +277,8 @@ struct LinkPreviewView: View {
                         .lineLimit(4)
                         .foregroundColor(.secondary)
                 }
-            } else {
-                // No metadata available
+            } else if loadFailed {
+                // No metadata available (only show after load completed)
                 Text("No preview available")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
