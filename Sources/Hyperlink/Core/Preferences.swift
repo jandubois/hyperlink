@@ -11,16 +11,14 @@ final class Preferences: ObservableObject, @unchecked Sendable {
         static let removeBackticks = "removeBackticks"
         static let trimGitHubSuffix = "trimGitHubSuffix"
         static let multiSelectionFormat = "multiSelectionFormat"
+        static let transformRules = "transformRules"
+        static let didMigrateLegacyTransforms = "didMigrateLegacyTransforms"
     }
 
     // MARK: - Transform Settings
 
-    @Published var removeBackticks: Bool {
-        didSet { defaults.set(removeBackticks, forKey: Keys.removeBackticks) }
-    }
-
-    @Published var trimGitHubSuffix: Bool {
-        didSet { defaults.set(trimGitHubSuffix, forKey: Keys.trimGitHubSuffix) }
+    @Published var transformSettings: TransformSettings {
+        didSet { saveTransformSettings() }
     }
 
     // MARK: - Multi-Selection Settings
@@ -37,23 +35,78 @@ final class Preferences: ObservableObject, @unchecked Sendable {
             Keys.multiSelectionFormat: MultiSelectionFormat.list.rawValue
         ])
 
-        // Load values from defaults
-        self.removeBackticks = defaults.bool(forKey: Keys.removeBackticks)
-        self.trimGitHubSuffix = defaults.bool(forKey: Keys.trimGitHubSuffix)
-
+        // Load multi-selection format
         if let formatString = defaults.string(forKey: Keys.multiSelectionFormat),
            let format = MultiSelectionFormat(rawValue: formatString) {
             self.multiSelectionFormat = format
         } else {
             self.multiSelectionFormat = .list
         }
+
+        // Load or migrate transform settings
+        self.transformSettings = TransformSettings()  // Temporary, will be overwritten
+        self.transformSettings = loadTransformSettings()
     }
 
-    /// Get current transform settings
+    private func loadTransformSettings() -> TransformSettings {
+        // Check if we have existing transform rules
+        if let data = defaults.data(forKey: Keys.transformRules),
+           let settings = try? JSONDecoder().decode(TransformSettings.self, from: data) {
+            return settings
+        }
+
+        // Check if we need to migrate legacy settings
+        if !defaults.bool(forKey: Keys.didMigrateLegacyTransforms) {
+            let removeBackticks = defaults.bool(forKey: Keys.removeBackticks)
+            let trimGitHubSuffix = defaults.bool(forKey: Keys.trimGitHubSuffix)
+
+            // Only migrate if at least one legacy key was explicitly set
+            let hasLegacySettings = defaults.object(forKey: Keys.removeBackticks) != nil ||
+                                    defaults.object(forKey: Keys.trimGitHubSuffix) != nil
+
+            if hasLegacySettings {
+                let settings = TransformSettings.migrateFromLegacy(
+                    removeBackticks: removeBackticks,
+                    trimGitHubSuffix: trimGitHubSuffix
+                )
+                defaults.set(true, forKey: Keys.didMigrateLegacyTransforms)
+                saveTransformSettingsSync(settings)
+                return settings
+            }
+        }
+
+        // Return default settings for fresh install
+        let settings = TransformSettings.defaultSettings()
+        saveTransformSettingsSync(settings)
+        return settings
+    }
+
+    private func saveTransformSettings() {
+        saveTransformSettingsSync(transformSettings)
+    }
+
+    private func saveTransformSettingsSync(_ settings: TransformSettings) {
+        if let data = try? JSONEncoder().encode(settings) {
+            defaults.set(data, forKey: Keys.transformRules)
+        }
+    }
+
+    /// Legacy compatibility: Get current transform settings as TitleTransform
+    /// This checks if the default rules are enabled to maintain backward compatibility
     var titleTransform: TitleTransform {
-        TitleTransform(
-            removeBackticks: removeBackticks,
-            trimGitHubSuffix: trimGitHubSuffix
+        // Check if backtick rule exists and is enabled
+        let hasBacktickRule = transformSettings.globalGroup.rules.contains { rule in
+            rule.isEnabled && rule.name == "Strip backticks"
+        }
+
+        // Check if GitHub suffix rule exists and is enabled
+        let hasGitHubRule = transformSettings.globalGroup.rules.contains { rule in
+            rule.isEnabled && rule.name == "GitHub suffix"
+        }
+
+        return TitleTransform(
+            removeBackticks: hasBacktickRule,
+            trimGitHubSuffix: hasGitHubRule
         )
     }
 }

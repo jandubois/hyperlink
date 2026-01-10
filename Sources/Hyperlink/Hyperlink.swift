@@ -228,13 +228,14 @@ struct Hyperlink: AsyncParsableCommand {
 
     private func outputTab(_ tab: TabInfo, source: any LinkSource) {
         let prefs = Preferences.shared
-        let transform = prefs.titleTransform
+        // CLI uses only global rules (no target app)
+        let engine = TransformEngine(settings: prefs.transformSettings, targetBundleID: nil)
 
         if stdout {
             switch format {
             case .markdown:
-                let title = transform.apply(to: tab.title)
-                print("[\(title)](\(tab.url.absoluteString))")
+                let result = engine.apply(title: tab.title, url: tab.url)
+                print("[\(result.title)](\(result.url))")
             case .json:
                 let output = SingleTabJSON(
                     browser: source.name.lowercased().replacingOccurrences(of: " ", with: ""),
@@ -249,20 +250,22 @@ struct Hyperlink: AsyncParsableCommand {
                 }
             }
         } else {
-            ClipboardWriter.write(tab, transform: transform)
+            let result = engine.apply(title: tab.title, url: tab.url)
+            ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
         }
     }
 
     private func outputAllTabs(_ tabs: [TabInfo], source: any LinkSource, windows: [WindowInfo]) {
         let prefs = Preferences.shared
-        let transform = prefs.titleTransform
+        // CLI uses only global rules (no target app)
+        let engine = TransformEngine(settings: prefs.transformSettings, targetBundleID: nil)
 
         if stdout {
             switch format {
             case .markdown:
                 for tab in tabs {
-                    let title = transform.apply(to: tab.title)
-                    print("[\(title)](\(tab.url.absoluteString))")
+                    let result = engine.apply(title: tab.title, url: tab.url)
+                    print("[\(result.title)](\(result.url))")
                 }
             case .json:
                 let output = AllTabsJSON(
@@ -289,7 +292,7 @@ struct Hyperlink: AsyncParsableCommand {
                 }
             }
         } else {
-            ClipboardWriter.write(tabs, format: prefs.multiSelectionFormat, transform: transform)
+            ClipboardWriter.write(tabs, format: prefs.multiSelectionFormat, engine: engine)
         }
     }
 }

@@ -10,6 +10,17 @@ enum ClipboardWriter {
         write(markdown: markdown, title: transformedTitle, url: tab.url)
     }
 
+    /// Write a single tab with pre-transformed title and URL
+    static func write(title: String, url: URL, transformedURL: String) {
+        // Use the transformed URL if it differs, otherwise use the original
+        let urlString = transformedURL.isEmpty ? url.absoluteString : transformedURL
+        let markdown = "[\(title)](\(urlString))"
+
+        // For RTF, we need a valid URL
+        let rtfURL = URL(string: urlString) ?? url
+        write(markdown: markdown, title: title, url: rtfURL)
+    }
+
     /// Write multiple tabs to the clipboard
     static func write(_ tabs: [TabInfo], format: MultiSelectionFormat, transform: TitleTransform = .default) {
         let lines = tabs.map { tab in
@@ -29,6 +40,30 @@ enum ClipboardWriter {
 
         // For multi-selection, we create RTF with multiple links
         let rtfData = createRTF(tabs: tabs, format: format, transform: transform)
+        writeToClipboard(markdown: markdown, rtfData: rtfData)
+    }
+
+    /// Write multiple tabs using TransformEngine
+    static func write(_ tabs: [TabInfo], format: MultiSelectionFormat, engine: TransformEngine) {
+        let transformedTabs = tabs.map { tab -> (title: String, url: String) in
+            let result = engine.apply(title: tab.title, url: tab.url)
+            return (result.title, result.url)
+        }
+
+        let lines = transformedTabs.map { "[\($0.title)](\($0.url))" }
+
+        let markdown: String
+        switch format {
+        case .list:
+            markdown = lines.map { "- \($0)" }.joined(separator: "\n")
+        case .plain:
+            markdown = lines.joined(separator: "\n")
+        case .html:
+            markdown = lines.map { "- \($0)" }.joined(separator: "\n")
+        }
+
+        // For multi-selection, we create RTF with multiple links
+        let rtfData = createRTF(transformedTabs: transformedTabs, format: format)
         writeToClipboard(markdown: markdown, rtfData: rtfData)
     }
 
@@ -61,6 +96,27 @@ enum ClipboardWriter {
         let links = tabs.map { tab in
             let title = escapeHTML(transform.apply(to: tab.title))
             return "<a href=\"\(tab.url.absoluteString)\">\(title)</a>"
+        }
+
+        let html: String
+        switch format {
+        case .list, .html:
+            html = "<font face=\"Helvetica Neue\"><ul>" +
+                   links.map { "<li>\($0)</li>" }.joined() +
+                   "</ul></font>"
+        case .plain:
+            html = "<font face=\"Helvetica Neue\">" +
+                   links.joined(separator: "<br>") +
+                   "</font>"
+        }
+
+        return htmlToRTF(html)
+    }
+
+    private static func createRTF(transformedTabs: [(title: String, url: String)], format: MultiSelectionFormat) -> Data? {
+        let links = transformedTabs.map { tab in
+            let title = escapeHTML(tab.title)
+            return "<a href=\"\(tab.url)\">\(title)</a>"
         }
 
         let html: String

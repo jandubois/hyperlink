@@ -5,6 +5,7 @@ struct PickerView: View {
     @ObservedObject var viewModel: PickerViewModel
     let onDismiss: () -> Void
     @State private var showHelp = false
+    @State private var showSettings = false
 
     /// Search field is active when it has text or user activated it with / or click
     private var searchFieldIsActive: Binding<Bool> {
@@ -31,16 +32,38 @@ struct PickerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Browser tab bar at top
-            if viewModel.browsers.count > 1 {
-                BrowserTabBar(
-                    browsers: viewModel.browsers,
-                    selectedIndex: $viewModel.selectedBrowserIndex
-                )
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
+            // Header row: browser tabs (if multiple) + settings/help icons
+            HStack(spacing: 8) {
+                if viewModel.browsers.count > 1 {
+                    BrowserTabBar(
+                        browsers: viewModel.browsers,
+                        selectedIndex: $viewModel.selectedBrowserIndex
+                    )
+                }
+
+                Spacer()
+
+                // Settings button
+                Button(action: { showSettings = true }) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Settings (Cmd+,)")
+
+                // Help button
+                Button(action: { showHelp = true }) {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Keyboard shortcuts (?)")
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
             // Search field + Select All on same row
             HStack(spacing: 8) {
@@ -64,18 +87,8 @@ struct PickerView: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
-
-                // Help button
-                Button(action: { showHelp = true }) {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Keyboard shortcuts (?)")
             }
             .padding(.horizontal, 12)
-            .padding(.top, viewModel.browsers.count > 1 ? 0 : 12)
             .padding(.bottom, 8)
 
             Divider()
@@ -143,7 +156,7 @@ struct PickerView: View {
                 .padding(12)
             }
         }
-        .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow))
+        .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -158,8 +171,29 @@ struct PickerView: View {
                 HelpOverlay(onDismiss: { showHelp = false })
             }
         }
+        .overlay {
+            if showSettings {
+                Color.black.opacity(0.3)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture { showSettings = false }
+
+                SettingsView(
+                    preferences: viewModel.preferences,
+                    currentTab: viewModel.highlightedIndex.flatMap { index in
+                        index < viewModel.filteredTabs.count ? viewModel.filteredTabs[index] : nil
+                    },
+                    onDismiss: { showSettings = false }
+                )
+            }
+        }
         .onAppear {
             setupKeyboardHandling()
+        }
+        .onChange(of: showSettings) { _, newValue in
+            viewModel.isShowingOverlay = newValue || showHelp
+        }
+        .onChange(of: showHelp) { _, newValue in
+            viewModel.isShowingOverlay = newValue || showSettings
         }
         .onChange(of: viewModel.selectedBrowserIndex) { _, _ in
             viewModel.selectedTabs.removeAll()
@@ -177,17 +211,47 @@ struct PickerView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        // Dismiss help on any key
-        if showHelp {
-            showHelp = false
-            return true
+        // Don't process most keys while an overlay (settings/help) is shown
+        // Check viewModel.isShowingOverlay since it's a reference type that stays current
+        if viewModel.isShowingOverlay {
+            // Only handle Escape to close overlays
+            if event.keyCode == 53 {
+                showSettings = false
+                showHelp = false
+                return true
+            }
+            return false
         }
+
+        // Check if a text field has focus - if so, let it handle most keys
+        let firstResponder = NSApp.keyWindow?.firstResponder
+        let textFieldHasFocus = firstResponder is NSText || firstResponder is NSTextField
 
         let hasModifier = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
         let hasCmd = event.modifierFlags.contains(.command)
         let hasCtrl = event.modifierFlags.contains(.control)
         let char = event.charactersIgnoringModifiers ?? ""
         let characters = event.characters ?? ""
+
+        // Cmd+, opens settings (always handle this)
+        if hasCmd && char == "," {
+            showSettings = true
+            return true
+        }
+
+        // If a text field has focus, only handle specific shortcuts, let the rest pass through
+        if textFieldHasFocus {
+            // Only handle Escape to clear/close, and Cmd shortcuts
+            if event.keyCode == 53 { // Escape
+                if !viewModel.searchText.isEmpty {
+                    viewModel.searchText = ""
+                    return true
+                }
+                return false // Let escape propagate to close window
+            }
+            // Let all other keys go to the text field
+            return false
+        }
 
         // `?` shows help when search is not active
         if characters == "?" && !hasModifier {

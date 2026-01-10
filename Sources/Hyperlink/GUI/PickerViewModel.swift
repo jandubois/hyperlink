@@ -16,7 +16,17 @@ class PickerViewModel: ObservableObject {
     /// Set to true when `/` is pressed or search field is clicked, causing next digit to go to search
     @Published var searchFocusRequested: Bool = false
 
-    private let preferences = Preferences.shared
+    /// Whether settings or help overlays are shown (used by keyboard handler)
+    @Published var isShowingOverlay: Bool = false
+
+    /// The bundle ID of the app that was frontmost before Hyperlink opened
+    let targetAppBundleID: String?
+
+    let preferences = Preferences.shared
+
+    init(targetAppBundleID: String? = nil) {
+        self.targetAppBundleID = targetAppBundleID
+    }
 
     struct BrowserData: Identifiable {
         let id = UUID()
@@ -356,8 +366,12 @@ class PickerViewModel: ObservableObject {
     }
 
     func copyAndDismiss(tab: TabInfo) {
-        let transform = preferences.titleTransform
-        ClipboardWriter.write(tab, transform: transform)
+        let engine = TransformEngine(
+            settings: preferences.transformSettings,
+            targetBundleID: targetAppBundleID
+        )
+        let result = engine.apply(title: tab.title, url: tab.url)
+        ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
     }
 
     func copySelected() {
@@ -368,9 +382,12 @@ class PickerViewModel: ObservableObject {
 
         guard !tabs.isEmpty else { return }
 
-        let transform = preferences.titleTransform
+        let engine = TransformEngine(
+            settings: preferences.transformSettings,
+            targetBundleID: targetAppBundleID
+        )
         let format = preferences.multiSelectionFormat
-        ClipboardWriter.write(tabs, format: format, transform: transform)
+        ClipboardWriter.write(tabs, format: format, engine: engine)
     }
 
     private func tabIdentifier(for tab: TabInfo) -> TabIdentifier {
