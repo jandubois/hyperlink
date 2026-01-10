@@ -661,6 +661,11 @@ class PickerViewModel: ObservableObject {
         }
     }
 
+    /// Open a tab's URL in the default browser
+    func openInBrowser(tab: TabInfo) {
+        NSWorkspace.shared.open(tab.url)
+    }
+
     /// Show a toast message that auto-dismisses
     func showToast(_ message: String) {
         toastMessage = message

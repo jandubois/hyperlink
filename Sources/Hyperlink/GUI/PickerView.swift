@@ -150,7 +150,9 @@ struct PickerView: View {
                     onExtract: { tab, _ in
                         viewModel.extractLinksFromTab(tab)
                     },
-                    isExtractedSource: viewModel.isViewingExtractedSource
+                    onOpenInBrowser: { tab in
+                        viewModel.openInBrowser(tab: tab)
+                    }
                 )
             }
         }

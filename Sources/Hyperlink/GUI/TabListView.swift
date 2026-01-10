@@ -9,7 +9,7 @@ struct TabListView: View {
     @Binding var highlightedIndex: Int?
     let onSelect: (TabInfo) -> Void
     var onExtract: ((TabInfo, Int) -> Void)? = nil
-    var isExtractedSource: Bool = false
+    var onOpenInBrowser: ((TabInfo) -> Void)? = nil
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -21,10 +21,10 @@ struct TabListView: View {
                             index: index,
                             isHighlighted: highlightedIndex == index,
                             isChecked: isTabSelected(tab),
-                            showExtractButton: !isExtractedSource,
                             onToggleCheck: { toggleSelection(tab) },
                             onSelect: { onSelect(tab) },
-                            onExtract: { onExtract?(tab, index) }
+                            onExtract: { onExtract?(tab, index) },
+                            onOpenInBrowser: { onOpenInBrowser?(tab) }
                         )
                     }
                 }
@@ -83,10 +83,10 @@ struct TabRowView: View {
     let index: Int
     let isHighlighted: Bool
     let isChecked: Bool
-    var showExtractButton: Bool = true
     let onToggleCheck: () -> Void
     let onSelect: () -> Void
     var onExtract: (() -> Void)? = nil
+    var onOpenInBrowser: (() -> Void)? = nil
 
     @State private var isHovering = false
 
@@ -139,15 +139,23 @@ struct TabRowView: View {
 
             Spacer()
 
-            // Extract links button (shown on hover for real browser tabs)
-            if showExtractButton && isHovering {
-                Button(action: { onExtract?() }) {
-                    Image(systemName: "link")
-                        .font(.system(size: 12))
+            // Actions menu (shown on hover)
+            if isHovering {
+                Menu {
+                    Button(action: { onOpenInBrowser?() }) {
+                        Label("Open in Browser", systemImage: "safari")
+                    }
+                    Button(action: { onExtract?() }) {
+                        Label("Extract Links", systemImage: "link")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Extract links from this page (Cmd+Enter)")
+                .menuStyle(.borderlessButton)
+                .frame(width: 20)
+                .help("Actions")
             }
         }
         .padding(.horizontal, 12)
