@@ -3,7 +3,7 @@ import SwiftUI
 /// Main picker view containing browser tabs and tab list
 struct PickerView: View {
     @ObservedObject var viewModel: PickerViewModel
-    let onDismiss: () -> Void
+    let onDismiss: (Bool) -> Void  // Bool indicates success (true) or cancellation (false)
     @State private var showHelp = false
     @State private var showSettings = false
 
@@ -18,12 +18,13 @@ struct PickerView: View {
         }
     }
 
-    /// Label for the copy button based on selection state
+    /// Label for the copy/paste button based on selection state and output mode
     private var copyButtonLabel: String {
+        let action = viewModel.isPasteMode ? "Paste" : "Copy"
         if viewModel.allFilteredTabsSelected {
-            return "Copy All"
+            return "\(action) All"
         } else {
-            return "Copy Selected (\(viewModel.selectedFilteredTabsCount)/\(viewModel.filteredTabs.count))"
+            return "\(action) Selected (\(viewModel.selectedFilteredTabsCount)/\(viewModel.filteredTabs.count))"
         }
     }
 
@@ -86,11 +87,11 @@ struct PickerView: View {
                     totalCount: viewModel.allCurrentTabs.count
                 )
 
-                // Copy button (when tabs are selected)
+                // Copy/Paste button (when tabs are selected)
                 if viewModel.selectedFilteredTabsCount > 0 {
                     Button(action: {
                         viewModel.copySelected()
-                        onDismiss()
+                        onDismiss(true)  // Success
                     }) {
                         Text(copyButtonLabel)
                             .font(.system(size: 11))
@@ -149,7 +150,7 @@ struct PickerView: View {
                     hoverPreviewsEnabled: $viewModel.hoverPreviewsEnabled,
                     onSelect: { tab in
                         viewModel.copyAndDismiss(tab: tab)
-                        onDismiss()
+                        onDismiss(true)  // Success
                     },
                     onExtract: { tab, _ in
                         viewModel.extractLinksFromTab(tab)
@@ -337,13 +338,13 @@ struct PickerView: View {
             } else if !viewModel.selectedTabs.isEmpty {
                 // Copy checkbox-selected tabs
                 viewModel.copySelected()
-                onDismiss()
+                onDismiss(true)  // Success
             } else if let item = viewModel.highlightedDisplayItem {
                 switch item {
                 case .tab(let tab, _):
                     // Copy highlighted tab
                     viewModel.copyAndDismiss(tab: tab)
-                    onDismiss()
+                    onDismiss(true)  // Success
                 case .groupHeader(let group, _):
                     // Toggle group selection
                     viewModel.toggleGroupSelection(group)
@@ -383,7 +384,7 @@ struct PickerView: View {
             if index < viewModel.filteredTabs.count {
                 let tab = viewModel.filteredTabs[index]
                 viewModel.copyAndDismiss(tab: tab)
-                onDismiss()
+                onDismiss(true)  // Success
             }
             return true
         }
@@ -414,7 +415,7 @@ struct PickerView: View {
             if index < viewModel.filteredTabs.count {
                 let tab = viewModel.filteredTabs[index]
                 viewModel.copyAndDismiss(tab: tab)
-                onDismiss()
+                onDismiss(true)  // Success
             }
             return true
         }

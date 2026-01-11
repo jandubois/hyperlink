@@ -7,11 +7,17 @@ enum BrowserDetector {
     nonisolated(unsafe) private static var cachedFrontmostBrowser: KnownBrowser?
     nonisolated(unsafe) private static var hasCachedFrontmost = false
 
+    /// Cache the frontmost app bundle ID at launch (for paste functionality)
+    nonisolated(unsafe) private(set) static var capturedFrontmostBundleID: String?
+
     /// Call this early at launch to capture the frontmost browser
     static func captureFrontmostBrowser() {
         guard !hasCachedFrontmost else { return }
         hasCachedFrontmost = true
         cachedFrontmostBrowser = detectFrontmostBrowser()
+
+        // Also capture the frontmost app (may not be a browser)
+        capturedFrontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
     private static func detectFrontmostBrowser() -> KnownBrowser? {

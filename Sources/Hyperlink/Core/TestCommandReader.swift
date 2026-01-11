@@ -40,7 +40,7 @@ class TestCommandReader: NSObject {
     private var inputThread: Thread?
     private let commandQueue = CommandQueue()
     weak var viewModel: PickerViewModel?
-    var onDismiss: (() -> Void)?
+    var onDismiss: ((Bool) -> Void)?
 
     func start() {
         // Read all commands from stdin first (non-blocking for the main thread)
@@ -131,7 +131,7 @@ class TestCommandReader: NSObject {
 
         case "quit", "exit":
             TestLogger.logResult("quit")
-            onDismiss?()
+            onDismiss?(false)  // User-initiated quit counts as cancelled
             return
 
         default:
@@ -176,12 +176,12 @@ class TestCommandReader: NSObject {
                     "title": tab.title,
                     "url": tab.url.absoluteString
                 ])
-                onDismiss?()
+                onDismiss?(true)  // Success: tab was copied
             }
 
         case "escape", "esc":
             TestLogger.logResult("dismiss", details: ["reason": "escape"])
-            onDismiss?()
+            onDismiss?(false)  // Cancelled: escape pressed
 
         case "space":
             // Space toggles selection only when search is empty
@@ -229,7 +229,7 @@ class TestCommandReader: NSObject {
                 "title": tab.title,
                 "url": tab.url.absoluteString
             ])
-            onDismiss?()
+            onDismiss?(true)  // Success: tab was copied
         }
     }
 
@@ -243,6 +243,6 @@ class TestCommandReader: NSObject {
             "url": tab.url.absoluteString,
             "method": "click"
         ])
-        onDismiss?()
+        onDismiss?(true)  // Success: tab was copied
     }
 }

@@ -25,10 +25,16 @@ struct Hyperlink: ParsableCommand {
     @Option(name: .long, help: "Tab to get: 1-based index, 'active', or 'all'")
     var tab: String = "active"
 
-    @Flag(name: .long, help: "Output to stdout instead of clipboard")
-    var stdout: Bool = false
+    @Flag(name: .long, help: "Copy to clipboard instead of stdout")
+    var copy: Bool = false
 
-    @Option(name: .long, help: "Output format for --stdout: markdown, json")
+    @Flag(name: .long, help: "Paste to frontmost app (or app specified by --paste-app)")
+    var paste: Bool = false
+
+    @Option(name: .long, help: "App to paste to (name or bundle ID). Implies --paste.")
+    var pasteApp: String?
+
+    @Option(name: .long, help: "Output format: markdown, json")
     var format: OutputFormat = .markdown
 
     @Flag(name: .long, help: "Enable test mode: verbose logging and stdin command input")
@@ -43,6 +49,15 @@ struct Hyperlink: ParsableCommand {
     mutating func run() throws {
         // Enable test logging if --test flag is set
         TestLogger.isEnabled = test
+
+        // --paste-app implies --paste
+        let pasteMode = paste || pasteApp != nil
+
+        // Validate mutual exclusion of --copy and --paste
+        if copy && pasteMode {
+            fputs("Error: --copy and --paste cannot be used together\n", stderr)
+            throw ExitCode(2)
+        }
 
         // Load mock data if specified
         if let mockPath = mockData {
@@ -60,28 +75,30 @@ struct Hyperlink: ParsableCommand {
             return
         }
 
-        // If no arguments provided (or only --test/--mock-data), launch GUI
-        let hasOnlyGUICompatibleFlags = browser == nil && !stdout && saveData == nil
-        let argCount = CommandLine.arguments.count
-        let shouldLaunchGUI = hasOnlyGUICompatibleFlags && (
-            argCount == 1 ||
-            (argCount == 2 && test) ||
-            (argCount == 2 && mockData != nil) ||
-            (argCount == 3 && test && mockData != nil) ||
-            (argCount == 4 && test && mockData != nil)
-        )
+        // GUI launches when: no browser specified and no save-data
+        // GUI-compatible flags: --copy, --paste, --paste-app, --test, --mock-data
+        let shouldLaunchGUI = browser == nil && saveData == nil
 
         if shouldLaunchGUI {
-            launchGUIApp(testMode: test)
+            launchGUIApp(testMode: test, copyMode: copy, pasteMode: pasteMode, pasteApp: pasteApp)
             return
         }
 
         try runCLI()
     }
 
-    private func launchGUIApp(testMode: Bool) {
+    private func launchGUIApp(testMode: Bool, copyMode: Bool, pasteMode: Bool, pasteApp: String?) {
         // Capture the frontmost browser before our window takes focus
         BrowserDetector.captureFrontmostBrowser()
+
+        // Determine output mode for GUI
+        // Priority: paste > copy > default (clipboard)
+        let outputMode: OutputMode
+        if pasteMode {
+            outputMode = .paste(app: pasteApp)  // nil means frontmost app
+        } else {
+            outputMode = .clipboard  // Default for GUI
+        }
 
         // Launch the GUI application synchronously on the main thread.
         // This must run from a synchronous context (not async) for cursors to work.
@@ -90,6 +107,7 @@ struct Hyperlink: ParsableCommand {
             let app = NSApplication.shared
             let delegate = AppDelegate()
             delegate.testMode = testMode
+            delegate.outputMode = outputMode
             app.delegate = delegate
             app.setActivationPolicy(.accessory)
             app.run()
@@ -144,6 +162,9 @@ struct Hyperlink: ParsableCommand {
     }
 
     private func runCLI() throws {
+        // Determine if paste mode is active
+        let pasteMode = paste || pasteApp != nil
+
         // Get the browser source (use mock if loaded)
         let source: any LinkSource
         if MockDataStore.isActive {
@@ -205,7 +226,7 @@ struct Hyperlink: ParsableCommand {
                 fputs("Error: No active tab found\n", stderr)
                 throw ExitCode(1)
             }
-            outputTab(activeTab, source: source)
+            try outputTab(activeTab, source: source, pasteMode: pasteMode)
 
         case "all":
             let allTabs = windows.flatMap { $0.tabs }
@@ -213,7 +234,7 @@ struct Hyperlink: ParsableCommand {
                 fputs("Error: No tabs found\n", stderr)
                 throw ExitCode(1)
             }
-            outputAllTabs(allTabs, source: source, windows: windows)
+            try outputAllTabs(allTabs, source: source, windows: windows, pasteMode: pasteMode)
 
         default:
             guard let index = Int(tab), index > 0 else {
@@ -228,19 +249,28 @@ struct Hyperlink: ParsableCommand {
                 throw ExitCode(1)
             }
             let selectedTab = allTabs[index - 1]
-            outputTab(selectedTab, source: source)
+            try outputTab(selectedTab, source: source, pasteMode: pasteMode)
         }
     }
 
-    private func outputTab(_ tab: TabInfo, source: any LinkSource) {
+    private func outputTab(_ tab: TabInfo, source: any LinkSource, pasteMode: Bool) throws {
         let prefs = Preferences.shared
         // CLI uses only global rules (no target app)
         let engine = TransformEngine(settings: prefs.transformSettings, targetBundleID: nil)
+        let result = engine.apply(title: tab.title, url: tab.url)
 
-        if stdout {
+        if copy || pasteMode {
+            // Write to clipboard
+            ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
+
+            // If paste mode, paste to target app
+            if pasteMode {
+                try OutputHandler.pasteToApp(pasteApp)
+            }
+        } else {
+            // stdout (default for CLI)
             switch format {
             case .markdown:
-                let result = engine.apply(title: tab.title, url: tab.url)
                 print("[\(result.title)](\(result.url))")
             case .json:
                 let output = SingleTabJSON(
@@ -255,18 +285,24 @@ struct Hyperlink: ParsableCommand {
                     print(json)
                 }
             }
-        } else {
-            let result = engine.apply(title: tab.title, url: tab.url)
-            ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
         }
     }
 
-    private func outputAllTabs(_ tabs: [TabInfo], source: any LinkSource, windows: [WindowInfo]) {
+    private func outputAllTabs(_ tabs: [TabInfo], source: any LinkSource, windows: [WindowInfo], pasteMode: Bool) throws {
         let prefs = Preferences.shared
         // CLI uses only global rules (no target app)
         let engine = TransformEngine(settings: prefs.transformSettings, targetBundleID: nil)
 
-        if stdout {
+        if copy || pasteMode {
+            // Write to clipboard
+            ClipboardWriter.write(tabs, format: prefs.multiSelectionFormat, engine: engine)
+
+            // If paste mode, paste to target app
+            if pasteMode {
+                try OutputHandler.pasteToApp(pasteApp)
+            }
+        } else {
+            // stdout (default for CLI)
             switch format {
             case .markdown:
                 for tab in tabs {
@@ -297,8 +333,6 @@ struct Hyperlink: ParsableCommand {
                     print(json)
                 }
             }
-        } else {
-            ClipboardWriter.write(tabs, format: prefs.multiSelectionFormat, engine: engine)
         }
     }
 }
@@ -308,6 +342,14 @@ struct Hyperlink: ParsableCommand {
 enum OutputFormat: String, ExpressibleByArgument, CaseIterable {
     case markdown
     case json
+}
+
+// MARK: - Output Mode
+
+enum OutputMode {
+    case stdout(format: OutputFormat)
+    case clipboard
+    case paste(app: String?)  // nil means frontmost app
 }
 
 // MARK: - JSON Output Structures

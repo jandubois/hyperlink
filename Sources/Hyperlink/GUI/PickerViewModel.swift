@@ -91,10 +91,20 @@ class PickerViewModel: ObservableObject {
     /// The bundle ID of the app that was frontmost before Hyperlink opened
     let targetAppBundleID: String?
 
+    /// Output mode for this session (clipboard or paste)
+    let outputMode: OutputMode
+
+    /// Whether we're in paste mode (for UI labels)
+    var isPasteMode: Bool {
+        if case .paste = outputMode { return true }
+        return false
+    }
+
     let preferences = Preferences.shared
 
-    init(targetAppBundleID: String? = nil) {
+    init(targetAppBundleID: String? = nil, outputMode: OutputMode = .clipboard) {
         self.targetAppBundleID = targetAppBundleID
+        self.outputMode = outputMode
     }
 
     struct BrowserData: Identifiable {
@@ -1099,6 +1109,15 @@ class PickerViewModel: ObservableObject {
         )
         let result = engine.apply(title: tab.title, url: tab.url)
         ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
+
+        // If paste mode, paste to target app
+        if case .paste(let app) = outputMode {
+            do {
+                try OutputHandler.pasteToApp(app)
+            } catch {
+                showToast("Paste failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func copySelected() {
@@ -1115,6 +1134,15 @@ class PickerViewModel: ObservableObject {
         )
         let format = preferences.multiSelectionFormat
         ClipboardWriter.write(tabs, format: format, engine: engine)
+
+        // If paste mode, paste to target app
+        if case .paste(let app) = outputMode {
+            do {
+                try OutputHandler.pasteToApp(app)
+            } catch {
+                showToast("Paste failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func tabIdentifier(for tab: TabInfo) -> TabIdentifier {

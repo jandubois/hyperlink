@@ -6,6 +6,7 @@ import AppKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: FloatingPanel?
     var testMode: Bool = false
+    var outputMode: OutputMode = .clipboard
     private var testCommandReader: TestCommandReader?
     private var previousAppBundleID: String?
 
@@ -24,7 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.windows.forEach { $0.close() }
 
         // Create and show the floating panel
-        panel = FloatingPanel(targetAppBundleID: previousAppBundleID)
+        panel = FloatingPanel(targetAppBundleID: previousAppBundleID, outputMode: outputMode)
         panel?.show()
 
         // Load browsers synchronously
@@ -69,8 +70,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupTestCommandReader() {
         testCommandReader = TestCommandReader()
         testCommandReader?.viewModel = panel?.viewModel
-        testCommandReader?.onDismiss = { [weak self] in
-            self?.panel?.dismiss()
+        testCommandReader?.onDismiss = { [weak self] success in
+            self?.panel?.dismiss(success: success)
         }
         testCommandReader?.start()
     }
@@ -86,9 +87,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 class FloatingPanel: NSWindow {
     private var hostingView: NSHostingView<PickerView>?
     var viewModel: PickerViewModel
+    private var exitCode: Int32 = 1  // Default: user cancelled
 
-    init(targetAppBundleID: String? = nil) {
-        self.viewModel = PickerViewModel(targetAppBundleID: targetAppBundleID)
+    init(targetAppBundleID: String? = nil, outputMode: OutputMode = .clipboard) {
+        self.viewModel = PickerViewModel(targetAppBundleID: targetAppBundleID, outputMode: outputMode)
 
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
@@ -111,8 +113,8 @@ class FloatingPanel: NSWindow {
         self.hasShadow = true
 
         // Set up content view
-        let pickerView = PickerView(viewModel: viewModel, onDismiss: { [weak self] in
-            self?.dismiss()
+        let pickerView = PickerView(viewModel: viewModel, onDismiss: { [weak self] success in
+            self?.dismiss(success: success)
         })
         hostingView = NSHostingView(rootView: pickerView)
         hostingView?.frame = contentView?.bounds ?? .zero
@@ -137,19 +139,20 @@ class FloatingPanel: NSWindow {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func dismiss() {
+    func dismiss(success: Bool = false) {
+        exitCode = success ? 0 : 1
         close()
-        NSApp.terminate(nil)
+        exit(exitCode)
     }
 
     @objc private func applicationDidResignActive(_ notification: Notification) {
-        // Dismiss when user clicks outside the app
-        dismiss()
+        // Dismiss when user clicks outside the app (cancelled)
+        dismiss(success: false)
     }
 
     override func cancelOperation(_ sender: Any?) {
-        // Escape key pressed
-        dismiss()
+        // Escape key pressed (cancelled)
+        dismiss(success: false)
     }
 
     override var canBecomeKey: Bool { true }
