@@ -60,12 +60,11 @@ struct HTMLLinkParserTests {
         #expect(links[0].anchorText == "First") // Keeps first occurrence
     }
 
-    @Test("Normalizes URLs for deduplication (protocol, fragments, trailing slashes)")
+    @Test("Normalizes URLs for deduplication (fragments, trailing slashes)")
     func normalizesURLsForDeduplication() {
         let html = """
-            <a href="https://example.com/page">HTTPS</a>
-            <a href="http://example.com/page">HTTP duplicate</a>
-            <a href="https://example.com/page#section1">Section 1</a>
+            <a href="https://example.com/page">First</a>
+            <a href="https://example.com/page#section1">With fragment</a>
             <a href="https://other.com#top">Other</a>
             <a href="https://slash.com/path/">With slash</a>
             <a href="https://slash.com/path">Without slash</a>
@@ -74,11 +73,29 @@ struct HTMLLinkParserTests {
 
         #expect(links.count == 3)
         #expect(links[0].url.absoluteString == "https://example.com/page")
-        #expect(links[0].anchorText == "HTTPS") // Keeps first occurrence (HTTP normalized to HTTPS)
+        #expect(links[0].anchorText == "First") // Keeps first occurrence
         #expect(links[1].url.absoluteString == "https://other.com")
         #expect(links[1].url.fragment == nil) // Fragment stripped
         #expect(links[2].url.absoluteString == "https://slash.com/path")
         #expect(links[2].anchorText == "With slash") // Keeps first occurrence, trailing slash stripped
+    }
+
+    @Test("Upgrades HTTP to HTTPS when both exist")
+    func upgradesHTTPtoHTTPS() {
+        let html = """
+            <a href="http://example.com/page">HTTP first</a>
+            <a href="https://example.com/page">HTTPS later</a>
+            <a href="http://httponly.com/path">HTTP only</a>
+            """
+        let links = HTMLLinkParser.extractLinks(from: html, baseURL: baseURL)
+
+        #expect(links.count == 2)
+        // First URL upgraded to HTTPS, but keeps original anchor text
+        #expect(links[0].url.absoluteString == "https://example.com/page")
+        #expect(links[0].anchorText == "HTTP first")
+        // HTTP-only URL stays as HTTP
+        #expect(links[1].url.absoluteString == "http://httponly.com/path")
+        #expect(links[1].anchorText == "HTTP only")
     }
 
     @Test("Cleans anchor text")

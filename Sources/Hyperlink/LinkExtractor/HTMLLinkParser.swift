@@ -20,10 +20,11 @@ enum HTMLLinkParser {
     /// - Parameters:
     ///   - html: The HTML source string
     ///   - baseURL: Base URL for resolving relative links
-    /// - Returns: Deduplicated array of links (first occurrence kept, normalized for deduplication)
+    /// - Returns: Deduplicated array of links (HTTPS preferred over HTTP for same URL)
     static func extractLinks(from html: String, baseURL: URL) -> [ParsedLink] {
-        var seen = Set<URL>()
-        var links: [ParsedLink] = []
+        // Track links by dedup key, preserving insertion order
+        var linksByKey: [String: ParsedLink] = [:]
+        var orderedKeys: [String] = []
 
         // Pattern to match <a ...href="..."...>...</a>
         // Captures href value and inner content
@@ -49,41 +50,42 @@ enum HTMLLinkParser {
             let href = String(html[hrefRange])
             let rawText = String(html[textRange])
 
-            // Resolve the URL and normalize for deduplication
+            // Resolve and normalize the URL
             guard let url = resolveURL(href, baseURL: baseURL),
                   isHTTPURL(url) else {
                 continue
             }
 
-            let normalizedURL = normalizeForDeduplication(url)
-            guard !seen.contains(normalizedURL) else {
-                continue
+            let normalizedURL = normalizeURL(url)
+            let dedupKey = deduplicationKey(for: normalizedURL)
+
+            if let existing = linksByKey[dedupKey] {
+                // If we have HTTP and found HTTPS, upgrade to HTTPS
+                if existing.url.scheme == "http" && normalizedURL.scheme == "https" {
+                    linksByKey[dedupKey] = ParsedLink(
+                        url: normalizedURL,
+                        anchorText: existing.anchorText  // Keep original anchor text
+                    )
+                }
+                // Otherwise keep existing (first occurrence)
+            } else {
+                // New URL
+                let anchorText = cleanAnchorText(rawText)
+                linksByKey[dedupKey] = ParsedLink(
+                    url: normalizedURL,
+                    anchorText: anchorText.isEmpty ? nil : anchorText
+                )
+                orderedKeys.append(dedupKey)
             }
-
-            seen.insert(normalizedURL)
-
-            // Clean up anchor text (strip HTML tags, normalize whitespace)
-            let anchorText = cleanAnchorText(rawText)
-
-            // Store normalized URL
-            links.append(ParsedLink(
-                url: normalizedURL,
-                anchorText: anchorText.isEmpty ? nil : anchorText
-            ))
         }
 
-        return links
+        // Return links in original order
+        return orderedKeys.compactMap { linksByKey[$0] }
     }
 
-    /// Normalizes a URL for deduplication (normalizes protocol, strips fragment, trailing slash)
-    private static func normalizeForDeduplication(_ url: URL) -> URL {
+    /// Normalizes a URL (strips fragment, trailing slash) but preserves protocol
+    private static func normalizeURL(_ url: URL) -> URL {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
-
-        // Normalize HTTP to HTTPS
-        if components?.scheme?.lowercased() == "http" {
-            components?.scheme = "https"
-        }
-
         components?.fragment = nil
 
         // Strip trailing slash from path (but keep root "/" intact)
@@ -92,6 +94,14 @@ enum HTMLLinkParser {
         }
 
         return components?.url ?? url
+    }
+
+    /// Creates a deduplication key (URL without protocol)
+    private static func deduplicationKey(for url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.scheme = nil
+        // Result: "//host/path" - unique regardless of http/https
+        return components?.string ?? url.absoluteString
     }
 
     /// Resolves a potentially relative URL against a base URL
