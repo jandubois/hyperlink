@@ -16,9 +16,18 @@ enum DomainFormatter {
         return stripCommonTLD(from: apex)
     }
 
+    /// Extracts the apex domain from a URL
+    /// e.g., "https://docs.github.com/en/get-started" → "github.com"
+    static func apexDomain(for url: URL) -> String {
+        guard let host = url.host?.lowercased() else {
+            return url.absoluteString
+        }
+        return apexDomain(from: host)
+    }
+
     /// Extracts the apex domain (registrable domain) from a host
     /// e.g., "docs.github.com" → "github.com"
-    private static func apexDomain(from host: String) -> String {
+    static func apexDomain(from host: String) -> String {
         let parts = host.split(separator: ".").map(String.init)
 
         guard parts.count >= 2 else {

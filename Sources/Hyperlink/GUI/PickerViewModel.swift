@@ -31,6 +31,12 @@ class PickerViewModel: ObservableObject {
     /// Sort direction per browser/source (keyed by index in allBrowserData)
     @Published var sortAscendings: [Int: Bool] = [:]
 
+    /// Grouping enabled per browser/source (keyed by index in allBrowserData)
+    @Published var groupingEnabled: [Int: Bool] = [:]
+
+    /// Collapsed group IDs per browser/source
+    @Published var collapsedGroups: [Int: Set<String>] = [:]
+
     /// Current sort order for the selected browser
     var sortOrder: SortOrder {
         get { sortOrders[selectedBrowserIndex] ?? .original }
@@ -41,6 +47,25 @@ class PickerViewModel: ObservableObject {
     var sortAscending: Bool {
         get { sortAscendings[selectedBrowserIndex] ?? true }
         set { sortAscendings[selectedBrowserIndex] = newValue }
+    }
+
+    /// Whether grouping is enabled for the selected browser
+    /// Auto-enables when there are more than 12 filtered tabs
+    var isGroupingEnabled: Bool {
+        get {
+            if let explicit = groupingEnabled[selectedBrowserIndex] {
+                return explicit
+            }
+            // Auto-enable for >12 items
+            return filteredTabs.count > 12
+        }
+        set { groupingEnabled[selectedBrowserIndex] = newValue }
+    }
+
+    /// Collapsed groups for the current browser
+    var currentCollapsedGroups: Set<String> {
+        get { collapsedGroups[selectedBrowserIndex] ?? [] }
+        set { collapsedGroups[selectedBrowserIndex] = newValue }
     }
 
     /// Toast message to display (auto-dismisses)
@@ -91,6 +116,27 @@ class PickerViewModel: ObservableObject {
         case byTitle = "By Title"
     }
 
+    /// A group of tabs sharing a common domain or path prefix
+    struct LinkGroup: Identifiable {
+        let id: String  // Domain or domain+path
+        let displayName: String
+        var tabs: [TabInfo]
+        var subgroups: [LinkGroup]
+
+        /// Whether this group has any subgroups
+        var hasSubgroups: Bool { !subgroups.isEmpty }
+
+        /// Total count including subgroups
+        var totalCount: Int {
+            tabs.count + subgroups.reduce(0) { $0 + $1.totalCount }
+        }
+
+        /// All tabs including those in subgroups (flattened)
+        var allTabs: [TabInfo] {
+            tabs + subgroups.flatMap { $0.allTabs }
+        }
+    }
+
     var currentWindows: [WindowInfo] {
         let allData = allBrowserData
         guard selectedBrowserIndex < allData.count else { return [] }
@@ -132,6 +178,95 @@ class PickerViewModel: ObservableObject {
             return sortAscending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
         return sorted
+    }
+
+    /// Tabs grouped by domain, with subgroups for common path prefixes
+    var groupedTabs: [LinkGroup] {
+        createGroups(from: filteredTabs)
+    }
+
+    /// Minimum number of items to form a subgroup
+    private let minSubgroupSize = 3
+
+    /// Creates groups from a list of tabs
+    private func createGroups(from tabs: [TabInfo]) -> [LinkGroup] {
+        // Group by apex domain
+        var domainGroups: [String: [TabInfo]] = [:]
+        for tab in tabs {
+            let domain = DomainFormatter.apexDomain(for: tab.url)
+            domainGroups[domain, default: []].append(tab)
+        }
+
+        // Sort domains by count (descending), then alphabetically
+        let sortedDomains = domainGroups.keys.sorted { a, b in
+            let countA = domainGroups[a]?.count ?? 0
+            let countB = domainGroups[b]?.count ?? 0
+            if countA != countB { return countA > countB }
+            return a < b
+        }
+
+        var result: [LinkGroup] = []
+        for domain in sortedDomains {
+            guard let domainTabs = domainGroups[domain] else { continue }
+
+            // For large groups, try to create subgroups by path prefix
+            if domainTabs.count > 10 {
+                let group = createGroupWithSubgroups(domain: domain, tabs: domainTabs)
+                result.append(group)
+            } else {
+                result.append(LinkGroup(
+                    id: domain,
+                    displayName: DomainFormatter.displayName(for: domainTabs[0].url),
+                    tabs: domainTabs,
+                    subgroups: []
+                ))
+            }
+        }
+
+        return result
+    }
+
+    /// Creates a group with subgroups based on common path prefixes
+    private func createGroupWithSubgroups(domain: String, tabs: [TabInfo]) -> LinkGroup {
+        // Extract first path component for each URL
+        var pathGroups: [String: [TabInfo]] = [:]
+        var noPathTabs: [TabInfo] = []
+
+        for tab in tabs {
+            let pathComponents = tab.url.pathComponents.filter { $0 != "/" }
+            if let firstPath = pathComponents.first {
+                pathGroups[firstPath, default: []].append(tab)
+            } else {
+                noPathTabs.append(tab)
+            }
+        }
+
+        // Create subgroups for paths with enough items
+        var subgroups: [LinkGroup] = []
+        var remainingTabs: [TabInfo] = noPathTabs
+
+        for (path, pathTabs) in pathGroups.sorted(by: { $0.value.count > $1.value.count }) {
+            if pathTabs.count >= minSubgroupSize {
+                subgroups.append(LinkGroup(
+                    id: "\(domain)/\(path)",
+                    displayName: "/\(path)",
+                    tabs: pathTabs,
+                    subgroups: []
+                ))
+            } else {
+                remainingTabs.append(contentsOf: pathTabs)
+            }
+        }
+
+        // Sort subgroups by count descending
+        subgroups.sort { $0.tabs.count > $1.tabs.count }
+
+        return LinkGroup(
+            id: domain,
+            displayName: DomainFormatter.displayName(for: tabs[0].url),
+            tabs: remainingTabs,
+            subgroups: subgroups
+        )
     }
 
     /// Synchronous version for use when async Tasks aren't running
@@ -461,6 +596,69 @@ class PickerViewModel: ObservableObject {
             deselectAllFilteredTabs()
         } else {
             selectAllFilteredTabs()
+        }
+    }
+
+    // MARK: - Group Selection
+
+    /// Toggle collapsed state for a group
+    func toggleGroupCollapsed(_ groupId: String) {
+        var collapsed = currentCollapsedGroups
+        if collapsed.contains(groupId) {
+            collapsed.remove(groupId)
+        } else {
+            collapsed.insert(groupId)
+        }
+        currentCollapsedGroups = collapsed
+    }
+
+    /// Check if a group is collapsed
+    func isGroupCollapsed(_ groupId: String) -> Bool {
+        currentCollapsedGroups.contains(groupId)
+    }
+
+    /// Returns the number of selected tabs in a group
+    func selectedCountInGroup(_ group: LinkGroup) -> Int {
+        group.allTabs.filter { tab in
+            selectedTabs.contains(tabIdentifier(for: tab))
+        }.count
+    }
+
+    /// Returns true if all tabs in a group are selected
+    func isGroupFullySelected(_ group: LinkGroup) -> Bool {
+        let allTabs = group.allTabs
+        guard !allTabs.isEmpty else { return false }
+        return selectedCountInGroup(group) == allTabs.count
+    }
+
+    /// Returns true if some (but not all) tabs in a group are selected
+    func isGroupPartiallySelected(_ group: LinkGroup) -> Bool {
+        let count = selectedCountInGroup(group)
+        return count > 0 && count < group.allTabs.count
+    }
+
+    /// Select all tabs in a group (clicking partial or empty selects all)
+    func selectAllInGroup(_ group: LinkGroup) {
+        for tab in group.allTabs {
+            let identifier = tabIdentifier(for: tab)
+            selectedTabs.insert(identifier)
+        }
+    }
+
+    /// Deselect all tabs in a group
+    func deselectAllInGroup(_ group: LinkGroup) {
+        for tab in group.allTabs {
+            let identifier = tabIdentifier(for: tab)
+            selectedTabs.remove(identifier)
+        }
+    }
+
+    /// Toggle group selection (partial or empty -> all selected, all selected -> none)
+    func toggleGroupSelection(_ group: LinkGroup) {
+        if isGroupFullySelected(group) {
+            deselectAllInGroup(group)
+        } else {
+            selectAllInGroup(group)
         }
     }
 

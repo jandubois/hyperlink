@@ -127,6 +127,9 @@ struct TabListView: View {
     var onExtract: ((TabInfo, Int) -> Void)? = nil
     var onOpenInBrowser: ((TabInfo) -> Void)? = nil
 
+    // Grouping support
+    @ObservedObject var viewModel: PickerViewModel
+
     // Preview state (lifted up from individual rows)
     @State private var hoveredTab: TabInfo?
     @State private var previewMetadata: OpenGraphMetadata?
@@ -141,27 +144,10 @@ struct TabListView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(filteredTabs.enumerated()), id: \.element) { index, tab in
-                        TabRowView(
-                            tab: tab,
-                            index: index,
-                            isHighlighted: highlightedIndex == index,
-                            isChecked: isTabSelected(tab),
-                            onToggleCheck: { toggleSelection(tab) },
-                            onSelect: { onSelect(tab) },
-                            onExtract: { onExtract?(tab, index) },
-                            onOpenInBrowser: { onOpenInBrowser?(tab) },
-                            onHover: { hovering in handleRowHover(tab: tab, hovering: hovering) }
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: RowBoundsPreferenceKey.self,
-                                    value: [tab: geo.frame(in: .global)]
-                                )
-                            }
-                        )
-                        .id(tab)
+                    if viewModel.isGroupingEnabled {
+                        groupedContent
+                    } else {
+                        flatContent
                     }
                 }
                 .padding(.vertical, 4)
@@ -191,6 +177,100 @@ struct TabListView: View {
         .onDisappear {
             PreviewPanelController.shared.hide()
         }
+    }
+
+    /// Flat list content (original behavior)
+    @ViewBuilder
+    private var flatContent: some View {
+        ForEach(Array(filteredTabs.enumerated()), id: \.element) { index, tab in
+            tabRow(tab: tab, index: index)
+        }
+    }
+
+    /// Grouped content with collapsible sections
+    @ViewBuilder
+    private var groupedContent: some View {
+        ForEach(viewModel.groupedTabs) { group in
+            groupSection(group: group, indentLevel: 0)
+        }
+    }
+
+    /// Renders a group with its header and contents (non-recursive to avoid type inference issues)
+    @ViewBuilder
+    private func groupSection(group: PickerViewModel.LinkGroup, indentLevel: Int) -> some View {
+        let isCollapsed = viewModel.isGroupCollapsed(group.id)
+
+        GroupHeaderView(
+            group: group,
+            isCollapsed: isCollapsed,
+            isFullySelected: viewModel.isGroupFullySelected(group),
+            isPartiallySelected: viewModel.isGroupPartiallySelected(group),
+            indentLevel: indentLevel,
+            onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
+            onToggleSelection: { viewModel.toggleGroupSelection(group) }
+        )
+
+        if !isCollapsed {
+            // Render subgroups (one level deep only for now)
+            ForEach(group.subgroups, id: \.id) { subgroup in
+                subgroupSection(group: subgroup, indentLevel: indentLevel + 1)
+            }
+
+            // Then render direct tabs
+            ForEach(group.tabs, id: \.self) { tab in
+                let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
+                tabRow(tab: tab, index: globalIndex, indentLevel: indentLevel)
+            }
+        }
+    }
+
+    /// Renders a subgroup (no further nesting)
+    @ViewBuilder
+    private func subgroupSection(group: PickerViewModel.LinkGroup, indentLevel: Int) -> some View {
+        let isCollapsed = viewModel.isGroupCollapsed(group.id)
+
+        GroupHeaderView(
+            group: group,
+            isCollapsed: isCollapsed,
+            isFullySelected: viewModel.isGroupFullySelected(group),
+            isPartiallySelected: viewModel.isGroupPartiallySelected(group),
+            indentLevel: indentLevel,
+            onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
+            onToggleSelection: { viewModel.toggleGroupSelection(group) }
+        )
+
+        if !isCollapsed {
+            ForEach(group.tabs, id: \.self) { tab in
+                let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
+                tabRow(tab: tab, index: globalIndex, indentLevel: indentLevel)
+            }
+        }
+    }
+
+    /// Single tab row with optional indentation
+    @ViewBuilder
+    private func tabRow(tab: TabInfo, index: Int, indentLevel: Int = 0) -> some View {
+        TabRowView(
+            tab: tab,
+            index: index,
+            isHighlighted: highlightedIndex == index,
+            isChecked: isTabSelected(tab),
+            onToggleCheck: { toggleSelection(tab) },
+            onSelect: { onSelect(tab) },
+            onExtract: { onExtract?(tab, index) },
+            onOpenInBrowser: { onOpenInBrowser?(tab) },
+            onHover: { hovering in handleRowHover(tab: tab, hovering: hovering) }
+        )
+        .padding(.leading, CGFloat(indentLevel) * 16)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: RowBoundsPreferenceKey.self,
+                    value: [tab: geo.frame(in: .global)]
+                )
+            }
+        )
+        .id(tab)
     }
 
     private func handleRowHover(tab: TabInfo, hovering: Bool) {
@@ -304,6 +384,71 @@ struct TabListView: View {
                 }
                 return
             }
+        }
+    }
+}
+
+/// Group header row with disclosure triangle and selection checkbox
+struct GroupHeaderView: View {
+    let group: PickerViewModel.LinkGroup
+    let isCollapsed: Bool
+    let isFullySelected: Bool
+    let isPartiallySelected: Bool
+    let indentLevel: Int
+    let onToggleCollapsed: () -> Void
+    let onToggleSelection: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Checkbox
+            Button(action: onToggleSelection) {
+                Image(systemName: checkboxIcon)
+                    .foregroundColor(isFullySelected || isPartiallySelected ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            // Disclosure triangle
+            Button(action: onToggleCollapsed) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12)
+            }
+            .buttonStyle(.plain)
+
+            // Group name
+            Text(group.displayName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+
+            // Count badge
+            Text("\(group.totalCount)")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.15))
+                .clipShape(Capsule())
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.leading, CGFloat(indentLevel) * 16)
+        .padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.05))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggleCollapsed()
+        }
+    }
+
+    private var checkboxIcon: String {
+        if isFullySelected {
+            return "checkmark.square.fill"
+        } else if isPartiallySelected {
+            return "minus.square.fill"
+        } else {
+            return "square"
         }
     }
 }

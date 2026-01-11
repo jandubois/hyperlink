@@ -156,7 +156,8 @@ struct PickerView: View {
                     },
                     onOpenInBrowser: { tab in
                         viewModel.openInBrowser(tab: tab)
-                    }
+                    },
+                    viewModel: viewModel
                 )
             }
         }
@@ -482,6 +483,30 @@ struct SortMenuButton: View {
                         }
                     )
                 }
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                // Group by Domain toggle
+                Button(action: {
+                    viewModel.isGroupingEnabled.toggle()
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark")
+                            .frame(width: 12)
+                            .opacity(viewModel.isGroupingEnabled ? 1 : 0)
+
+                        Text("Group by Domain")
+                            .fixedSize()
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(viewModel.isGroupingEnabled ? Color.accentColor.opacity(0.1) : Color.clear)
             }
             .padding(.vertical, 4)
             .onHover { hovering in
