@@ -161,9 +161,8 @@ struct TabListView: View {
             }
             .onChange(of: highlightedIndex) { oldValue, newValue in
                 if let index = newValue, index < items.count {
-                    withAnimation {
-                        proxy.scrollTo(items[index].id, anchor: .center)
-                    }
+                    // Use nil anchor to scroll minimally (only if item is off-screen)
+                    proxy.scrollTo(items[index].id, anchor: nil)
                 }
             }
         }

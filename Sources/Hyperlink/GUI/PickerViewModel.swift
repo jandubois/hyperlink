@@ -260,11 +260,15 @@ class PickerViewModel: ObservableObject {
             domainGroups[domain, default: []].append(tab)
         }
 
+        // Sort domains for stable iteration order
+        let sortedDomains = domainGroups.keys.sorted()
+
         // Separate into groups (≥3 items) and ungrouped
         var groups: [LinkGroup] = []
         var ungroupedTabs: [TabInfo] = []
 
-        for (domain, domainTabs) in domainGroups {
+        for domain in sortedDomains {
+            guard let domainTabs = domainGroups[domain] else { continue }
             if domainTabs.count >= minGroupSize {
                 if domainTabs.count > 10 {
                     groups.append(createGroupWithSubgroups(domain: domain, tabs: domainTabs))
@@ -350,8 +354,11 @@ class PickerViewModel: ObservableObject {
             }
         }
 
-        // Sort subgroups by count descending
-        subgroups.sort { $0.tabs.count > $1.tabs.count }
+        // Sort subgroups by count descending, then alphabetically
+        subgroups.sort { a, b in
+            if a.tabs.count != b.tabs.count { return a.tabs.count > b.tabs.count }
+            return a.displayName < b.displayName
+        }
 
         return LinkGroup(
             id: domain,
