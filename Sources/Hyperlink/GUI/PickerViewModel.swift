@@ -313,9 +313,41 @@ class PickerViewModel: ObservableObject {
         return items
     }
 
-    /// Creates an apex domain group with host subgroups
+    /// Creates a group for tabs, using the longest common prefix as the group name
     private func createApexDomainGroup(apex: String, tabs: [TabInfo]) -> LinkGroup {
-        // Group tabs by full host within this apex domain
+        // Find the longest common prefix (host + path) among all tabs
+        let commonPrefix = longestCommonPrefix(for: tabs)
+
+        // If all tabs share a common host (and possibly path), use that as the base
+        if let prefix = commonPrefix, !prefix.pathComponents.isEmpty || prefix.host != nil {
+            let host = prefix.host ?? apex
+            let pathComponents = prefix.pathComponents
+
+            if pathComponents.isEmpty {
+                // All share the same host, but paths differ
+                // Check if there are multiple hosts
+                let hosts = Set(tabs.compactMap { $0.url.host?.lowercased() })
+                if hosts.count == 1 {
+                    // Single host - use it as the group and apply path grouping
+                    if tabs.count > 10 {
+                        return createGroupWithSubgroups(host: host, tabs: tabs)
+                    } else {
+                        return LinkGroup(id: host, displayName: host, tabs: tabs, subgroups: [])
+                    }
+                }
+            } else {
+                // All share common path components - use host/path as the group
+                let pathString = pathComponents.joined(separator: "/")
+                let groupId = "\(host)/\(pathString)"
+                if tabs.count > 10 {
+                    return createGroupWithSubgroups(host: host, tabs: tabs, pathPrefix: pathComponents)
+                } else {
+                    return LinkGroup(id: groupId, displayName: groupId, tabs: tabs, subgroups: [])
+                }
+            }
+        }
+
+        // Multiple hosts or no common prefix - create apex group with host subgroups
         var hostGroups: [String: [TabInfo]] = [:]
         for tab in tabs {
             let host = tab.url.host?.lowercased() ?? apex
@@ -327,19 +359,10 @@ class PickerViewModel: ObservableObject {
 
         for (host, hostTabs) in hostGroups.sorted(by: { $0.key < $1.key }) {
             if hostTabs.count >= minGroupSize {
-                // This host has enough entries to form a subgroup
-                if hostTabs.count > 10 {
-                    subgroups.append(createGroupWithSubgroups(host: host, tabs: hostTabs))
-                } else {
-                    subgroups.append(LinkGroup(
-                        id: host,
-                        displayName: host,
-                        tabs: hostTabs,
-                        subgroups: []
-                    ))
-                }
+                // Recursively find common prefix for this host's tabs
+                let hostGroup = createApexDomainGroup(apex: host, tabs: hostTabs)
+                subgroups.append(hostGroup)
             } else {
-                // Not enough entries - add as direct tabs
                 directTabs.append(contentsOf: hostTabs)
             }
         }
@@ -356,6 +379,42 @@ class PickerViewModel: ObservableObject {
             tabs: directTabs,
             subgroups: subgroups
         )
+    }
+
+    /// Finds the longest common URL prefix (host + path components) among tabs
+    private func longestCommonPrefix(for tabs: [TabInfo]) -> (host: String?, pathComponents: [String])? {
+        guard let first = tabs.first else { return nil }
+
+        let firstHost = first.url.host?.lowercased()
+        let firstPath = first.url.pathComponents.filter { $0 != "/" }
+
+        var commonHost = firstHost
+        var commonPath = firstPath
+
+        for tab in tabs.dropFirst() {
+            let host = tab.url.host?.lowercased()
+            let path = tab.url.pathComponents.filter { $0 != "/" }
+
+            // Check if hosts match
+            if host != commonHost {
+                commonHost = nil
+                commonPath = []
+                break
+            }
+
+            // Find common path prefix
+            var newCommonPath: [String] = []
+            for (i, component) in commonPath.enumerated() {
+                if i < path.count && path[i] == component {
+                    newCommonPath.append(component)
+                } else {
+                    break
+                }
+            }
+            commonPath = newCommonPath
+        }
+
+        return (host: commonHost, pathComponents: commonPath)
     }
 
     /// Recursively append group items to the display list
