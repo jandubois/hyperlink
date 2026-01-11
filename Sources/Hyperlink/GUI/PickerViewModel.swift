@@ -353,11 +353,11 @@ class PickerViewModel: ObservableObject {
 
             children.sort { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
 
-            let tabIndent = group.hasSubgroups ? indentLevel + 1 : indentLevel
             for child in children {
                 switch child {
                 case .tab(let tab):
-                    items.append(.tab(tab: tab, indentLevel: tabIndent))
+                    // Tabs always indented one level from their group header
+                    items.append(.tab(tab: tab, indentLevel: indentLevel + 1))
                 case .subgroup(let subgroup):
                     appendGroupItems(group: subgroup, indentLevel: indentLevel + 1, to: &items)
                 }
