@@ -253,35 +253,26 @@ class PickerViewModel: ObservableObject {
     private func buildDisplayItems() -> [DisplayItem] {
         let tabs = filteredTabs
 
-        // Group by full host (www.suse.com and brand.suse.com are separate)
-        var hostGroups: [String: [TabInfo]] = [:]
+        // First, group by apex domain
+        var apexGroups: [String: [TabInfo]] = [:]
         for tab in tabs {
-            let host = tab.url.host?.lowercased() ?? tab.url.absoluteString
-            hostGroups[host, default: []].append(tab)
+            let apex = DomainFormatter.apexDomain(for: tab.url)
+            apexGroups[apex, default: []].append(tab)
         }
 
-        // Sort hosts for stable iteration order
-        let sortedHosts = hostGroups.keys.sorted()
+        // Sort apex domains for stable iteration order
+        let sortedApexDomains = apexGroups.keys.sorted()
 
-        // Separate into groups (≥3 items) and ungrouped
+        // Build groups: apex domains with ≥3 items become groups
         var groups: [LinkGroup] = []
         var ungroupedTabs: [TabInfo] = []
 
-        for host in sortedHosts {
-            guard let hostTabs = hostGroups[host] else { continue }
-            if hostTabs.count >= minGroupSize {
-                if hostTabs.count > 10 {
-                    groups.append(createGroupWithSubgroups(host: host, tabs: hostTabs))
-                } else {
-                    groups.append(LinkGroup(
-                        id: host,
-                        displayName: host,
-                        tabs: hostTabs,
-                        subgroups: []
-                    ))
-                }
+        for apex in sortedApexDomains {
+            guard let apexTabs = apexGroups[apex] else { continue }
+            if apexTabs.count >= minGroupSize {
+                groups.append(createApexDomainGroup(apex: apex, tabs: apexTabs))
             } else {
-                ungroupedTabs.append(contentsOf: hostTabs)
+                ungroupedTabs.append(contentsOf: apexTabs)
             }
         }
 
@@ -302,7 +293,7 @@ class PickerViewModel: ObservableObject {
         sortableItems.append(contentsOf: groups.map { .group($0) })
         sortableItems.append(contentsOf: ungroupedTabs.map { .tab($0) })
 
-        // Sort by domain name (displayName for groups, host for tabs)
+        // Sort by domain name
         sortableItems.sort { a, b in
             a.sortKey.localizedCaseInsensitiveCompare(b.sortKey) == .orderedAscending
         }
@@ -320,6 +311,51 @@ class PickerViewModel: ObservableObject {
         }
 
         return items
+    }
+
+    /// Creates an apex domain group with host subgroups
+    private func createApexDomainGroup(apex: String, tabs: [TabInfo]) -> LinkGroup {
+        // Group tabs by full host within this apex domain
+        var hostGroups: [String: [TabInfo]] = [:]
+        for tab in tabs {
+            let host = tab.url.host?.lowercased() ?? apex
+            hostGroups[host, default: []].append(tab)
+        }
+
+        var subgroups: [LinkGroup] = []
+        var directTabs: [TabInfo] = []
+
+        for (host, hostTabs) in hostGroups.sorted(by: { $0.key < $1.key }) {
+            if hostTabs.count >= minGroupSize {
+                // This host has enough entries to form a subgroup
+                if hostTabs.count > 10 {
+                    subgroups.append(createGroupWithSubgroups(host: host, tabs: hostTabs))
+                } else {
+                    subgroups.append(LinkGroup(
+                        id: host,
+                        displayName: host,
+                        tabs: hostTabs,
+                        subgroups: []
+                    ))
+                }
+            } else {
+                // Not enough entries - add as direct tabs
+                directTabs.append(contentsOf: hostTabs)
+            }
+        }
+
+        // Sort subgroups by count descending, then alphabetically
+        subgroups.sort { a, b in
+            if a.totalCount != b.totalCount { return a.totalCount > b.totalCount }
+            return a.displayName < b.displayName
+        }
+
+        return LinkGroup(
+            id: apex,
+            displayName: apex,
+            tabs: directTabs,
+            subgroups: subgroups
+        )
     }
 
     /// Recursively append group items to the display list
