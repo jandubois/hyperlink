@@ -25,6 +25,24 @@ class PickerViewModel: ObservableObject {
     /// Whether hover previews are enabled (disabled during keyboard navigation)
     @Published var hoverPreviewsEnabled: Bool = true
 
+    /// Sort order per browser/source (keyed by index in allBrowserData)
+    @Published var sortOrders: [Int: SortOrder] = [:]
+
+    /// Sort direction per browser/source (keyed by index in allBrowserData)
+    @Published var sortAscendings: [Int: Bool] = [:]
+
+    /// Current sort order for the selected browser
+    var sortOrder: SortOrder {
+        get { sortOrders[selectedBrowserIndex] ?? .original }
+        set { sortOrders[selectedBrowserIndex] = newValue }
+    }
+
+    /// Current sort direction for the selected browser
+    var sortAscending: Bool {
+        get { sortAscendings[selectedBrowserIndex] ?? true }
+        set { sortAscendings[selectedBrowserIndex] = newValue }
+    }
+
     /// Toast message to display (auto-dismisses)
     @Published var toastMessage: String? = nil
 
@@ -67,6 +85,12 @@ class PickerViewModel: ObservableObject {
         let tabIndex: Int
     }
 
+    enum SortOrder: String, CaseIterable {
+        case original = "Original"
+        case byURL = "By URL"
+        case byTitle = "By Title"
+    }
+
     var currentWindows: [WindowInfo] {
         let allData = allBrowserData
         guard selectedBrowserIndex < allData.count else { return [] }
@@ -78,15 +102,36 @@ class PickerViewModel: ObservableObject {
     }
 
     var filteredTabs: [TabInfo] {
-        let tabs = allCurrentTabs
-        if searchText.isEmpty {
-            return tabs
+        var tabs = allCurrentTabs
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            tabs = tabs.filter { tab in
+                tab.title.lowercased().contains(query) ||
+                tab.url.absoluteString.lowercased().contains(query)
+            }
         }
-        let query = searchText.lowercased()
-        return tabs.filter { tab in
-            tab.title.lowercased().contains(query) ||
-            tab.url.absoluteString.lowercased().contains(query)
+        return sortTabs(tabs)
+    }
+
+    private func sortTabs(_ tabs: [TabInfo]) -> [TabInfo] {
+        guard sortOrder != .original else { return tabs }
+
+        let sorted = tabs.sorted { a, b in
+            let comparison: ComparisonResult
+            switch sortOrder {
+            case .original:
+                return false // Won't reach here due to guard
+            case .byURL:
+                // Compare URLs ignoring protocol
+                let urlA = a.url.absoluteString.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                let urlB = b.url.absoluteString.replacingOccurrences(of: "^https?://", with: "", options: .regularExpression)
+                comparison = urlA.localizedCaseInsensitiveCompare(urlB)
+            case .byTitle:
+                comparison = a.title.localizedCaseInsensitiveCompare(b.title)
+            }
+            return sortAscending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
+        return sorted
     }
 
     /// Synchronous version for use when async Tasks aren't running

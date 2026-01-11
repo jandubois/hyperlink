@@ -75,6 +75,9 @@ struct PickerView: View {
                 }
                 .buttonStyle(.plain)
 
+                // Sort menu
+                SortMenuButton(viewModel: viewModel)
+
                 // Search field
                 SearchField(
                     text: $viewModel.searchText,
@@ -446,5 +449,86 @@ struct VisualEffectView: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
+    }
+}
+
+/// Sort menu button with popover that stays open until mouse leaves
+struct SortMenuButton: View {
+    @ObservedObject var viewModel: PickerViewModel
+    @State private var isShowingPopover = false
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: { isShowingPopover.toggle() }) {
+            Image(systemName: "arrow.up.arrow.down.square.fill")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 20)
+        .popover(isPresented: $isShowingPopover, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(PickerViewModel.SortOrder.allCases, id: \.self) { order in
+                    SortMenuItem(
+                        order: order,
+                        isSelected: viewModel.sortOrder == order,
+                        isAscending: viewModel.sortAscending,
+                        action: {
+                            if viewModel.sortOrder == order {
+                                viewModel.sortAscending.toggle()
+                            } else {
+                                viewModel.sortOrder = order
+                            }
+                        }
+                    )
+                }
+            }
+            .padding(.vertical, 4)
+            .onHover { hovering in
+                isHovering = hovering
+                if !hovering {
+                    // Delay closing to allow for small mouse movements
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        if !isHovering {
+                            isShowingPopover = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Individual menu item for sort options
+struct SortMenuItem: View {
+    let order: PickerViewModel.SortOrder
+    let isSelected: Bool
+    let isAscending: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark")
+                    .frame(width: 12)
+                    .opacity(isSelected ? 1 : 0)
+
+                Text(order.rawValue)
+                    .fixedSize()
+
+                Spacer()
+
+                // Always reserve space for chevron to prevent layout shift
+                Image(systemName: isAscending ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .opacity(isSelected && order != .original ? 1 : 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
     }
 }
