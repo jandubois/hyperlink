@@ -179,6 +179,21 @@ struct TabListView: View {
         }
     }
 
+    /// Display item for flattened grouped list
+    private enum GroupedDisplayItem: Identifiable {
+        case groupHeader(group: PickerViewModel.LinkGroup, indentLevel: Int)
+        case tabRow(tab: TabInfo, globalIndex: Int, indentLevel: Int)
+
+        var id: String {
+            switch self {
+            case .groupHeader(let group, _):
+                return "header-\(group.id)"
+            case .tabRow(let tab, _, _):
+                return "tab-\(tab.url.absoluteString)-\(tab.index)"
+            }
+        }
+    }
+
     /// Flat list content (original behavior)
     @ViewBuilder
     private var flatContent: some View {
@@ -187,64 +202,57 @@ struct TabListView: View {
         }
     }
 
-    /// Grouped content with collapsible sections
+    /// Grouped content - flattened to single ForEach for stable rendering
     @ViewBuilder
     private var groupedContent: some View {
-        ForEach(viewModel.groupedTabs) { group in
-            groupSection(group: group, indentLevel: 0)
-        }
-    }
-
-    /// Renders a group with its header and contents (non-recursive to avoid type inference issues)
-    @ViewBuilder
-    private func groupSection(group: PickerViewModel.LinkGroup, indentLevel: Int) -> some View {
-        let isCollapsed = viewModel.isGroupCollapsed(group.id)
-
-        GroupHeaderView(
-            group: group,
-            isCollapsed: isCollapsed,
-            isFullySelected: viewModel.isGroupFullySelected(group),
-            isPartiallySelected: viewModel.isGroupPartiallySelected(group),
-            indentLevel: indentLevel,
-            onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
-            onToggleSelection: { viewModel.toggleGroupSelection(group) }
-        )
-
-        if !isCollapsed {
-            // Render subgroups (one level deep only for now)
-            ForEach(group.subgroups, id: \.id) { subgroup in
-                subgroupSection(group: subgroup, indentLevel: indentLevel + 1)
-            }
-
-            // Then render direct tabs
-            ForEach(group.tabs, id: \.self) { tab in
-                let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
+        let items = buildGroupedDisplayItems()
+        ForEach(items) { item in
+            switch item {
+            case .groupHeader(let group, let indentLevel):
+                GroupHeaderView(
+                    group: group,
+                    isCollapsed: viewModel.isGroupCollapsed(group.id),
+                    isFullySelected: viewModel.isGroupFullySelected(group),
+                    isPartiallySelected: viewModel.isGroupPartiallySelected(group),
+                    indentLevel: indentLevel,
+                    onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
+                    onToggleSelection: { viewModel.toggleGroupSelection(group) }
+                )
+            case .tabRow(let tab, let globalIndex, let indentLevel):
                 tabRow(tab: tab, index: globalIndex, indentLevel: indentLevel)
             }
         }
     }
 
-    /// Renders a subgroup (no further nesting)
-    @ViewBuilder
-    private func subgroupSection(group: PickerViewModel.LinkGroup, indentLevel: Int) -> some View {
-        let isCollapsed = viewModel.isGroupCollapsed(group.id)
+    /// Builds a flat list of display items from the grouped structure
+    private func buildGroupedDisplayItems() -> [GroupedDisplayItem] {
+        var items: [GroupedDisplayItem] = []
 
-        GroupHeaderView(
-            group: group,
-            isCollapsed: isCollapsed,
-            isFullySelected: viewModel.isGroupFullySelected(group),
-            isPartiallySelected: viewModel.isGroupPartiallySelected(group),
-            indentLevel: indentLevel,
-            onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
-            onToggleSelection: { viewModel.toggleGroupSelection(group) }
-        )
+        for group in viewModel.groupedTabs {
+            items.append(.groupHeader(group: group, indentLevel: 0))
 
-        if !isCollapsed {
-            ForEach(group.tabs, id: \.self) { tab in
-                let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
-                tabRow(tab: tab, index: globalIndex, indentLevel: indentLevel)
+            if !viewModel.isGroupCollapsed(group.id) {
+                // Add subgroups
+                for subgroup in group.subgroups {
+                    items.append(.groupHeader(group: subgroup, indentLevel: 1))
+
+                    if !viewModel.isGroupCollapsed(subgroup.id) {
+                        for tab in subgroup.tabs {
+                            let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
+                            items.append(.tabRow(tab: tab, globalIndex: globalIndex, indentLevel: 1))
+                        }
+                    }
+                }
+
+                // Add direct tabs
+                for tab in group.tabs {
+                    let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
+                    items.append(.tabRow(tab: tab, globalIndex: globalIndex, indentLevel: 0))
+                }
             }
         }
+
+        return items
     }
 
     /// Single tab row with optional indentation

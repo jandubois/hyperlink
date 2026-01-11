@@ -185,8 +185,8 @@ class PickerViewModel: ObservableObject {
         createGroups(from: filteredTabs)
     }
 
-    /// Minimum number of items to form a subgroup
-    private let minSubgroupSize = 3
+    /// Minimum number of items to form a group
+    private let minGroupSize = 3
 
     /// Creates groups from a list of tabs
     private func createGroups(from tabs: [TabInfo]) -> [LinkGroup] {
@@ -206,21 +206,39 @@ class PickerViewModel: ObservableObject {
         }
 
         var result: [LinkGroup] = []
+        var ungroupedTabs: [TabInfo] = []
+
         for domain in sortedDomains {
             guard let domainTabs = domainGroups[domain] else { continue }
 
-            // For large groups, try to create subgroups by path prefix
-            if domainTabs.count > 10 {
-                let group = createGroupWithSubgroups(domain: domain, tabs: domainTabs)
-                result.append(group)
+            // Only create a group if we have enough items
+            if domainTabs.count >= minGroupSize {
+                // For large groups, try to create subgroups by path prefix
+                if domainTabs.count > 10 {
+                    let group = createGroupWithSubgroups(domain: domain, tabs: domainTabs)
+                    result.append(group)
+                } else {
+                    result.append(LinkGroup(
+                        id: domain,
+                        displayName: DomainFormatter.displayName(for: domainTabs[0].url),
+                        tabs: domainTabs,
+                        subgroups: []
+                    ))
+                }
             } else {
-                result.append(LinkGroup(
-                    id: domain,
-                    displayName: DomainFormatter.displayName(for: domainTabs[0].url),
-                    tabs: domainTabs,
-                    subgroups: []
-                ))
+                // Too few items - add to ungrouped
+                ungroupedTabs.append(contentsOf: domainTabs)
             }
+        }
+
+        // Add ungrouped items as "Other" group if there are any
+        if !ungroupedTabs.isEmpty {
+            result.append(LinkGroup(
+                id: "_other",
+                displayName: "Other",
+                tabs: ungroupedTabs,
+                subgroups: []
+            ))
         }
 
         return result
@@ -246,7 +264,7 @@ class PickerViewModel: ObservableObject {
         var remainingTabs: [TabInfo] = noPathTabs
 
         for (path, pathTabs) in pathGroups.sorted(by: { $0.value.count > $1.value.count }) {
-            if pathTabs.count >= minSubgroupSize {
+            if pathTabs.count >= minGroupSize {
                 subgroups.append(LinkGroup(
                     id: "\(domain)/\(path)",
                     displayName: "/\(path)",
