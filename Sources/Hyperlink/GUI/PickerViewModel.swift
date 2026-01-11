@@ -253,37 +253,35 @@ class PickerViewModel: ObservableObject {
     private func buildDisplayItems() -> [DisplayItem] {
         let tabs = filteredTabs
 
-        // Group by apex domain
-        var domainGroups: [String: [TabInfo]] = [:]
+        // Group by full host (www.suse.com and brand.suse.com are separate)
+        var hostGroups: [String: [TabInfo]] = [:]
         for tab in tabs {
-            let domain = DomainFormatter.apexDomain(for: tab.url)
-            domainGroups[domain, default: []].append(tab)
+            let host = tab.url.host?.lowercased() ?? tab.url.absoluteString
+            hostGroups[host, default: []].append(tab)
         }
 
-        // Sort domains for stable iteration order
-        let sortedDomains = domainGroups.keys.sorted()
+        // Sort hosts for stable iteration order
+        let sortedHosts = hostGroups.keys.sorted()
 
         // Separate into groups (≥3 items) and ungrouped
         var groups: [LinkGroup] = []
         var ungroupedTabs: [TabInfo] = []
 
-        for domain in sortedDomains {
-            guard let domainTabs = domainGroups[domain] else { continue }
-            if domainTabs.count >= minGroupSize {
-                // Use full host for display name (e.g., www.suse.com instead of suse)
-                let fullHost = domainTabs[0].url.host ?? domain
-                if domainTabs.count > 10 {
-                    groups.append(createGroupWithSubgroups(domain: domain, host: fullHost, tabs: domainTabs))
+        for host in sortedHosts {
+            guard let hostTabs = hostGroups[host] else { continue }
+            if hostTabs.count >= minGroupSize {
+                if hostTabs.count > 10 {
+                    groups.append(createGroupWithSubgroups(host: host, tabs: hostTabs))
                 } else {
                     groups.append(LinkGroup(
-                        id: domain,
-                        displayName: fullHost,
-                        tabs: domainTabs,
+                        id: host,
+                        displayName: host,
+                        tabs: hostTabs,
                         subgroups: []
                     ))
                 }
             } else {
-                ungroupedTabs.append(contentsOf: domainTabs)
+                ungroupedTabs.append(contentsOf: hostTabs)
             }
         }
 
@@ -367,12 +365,10 @@ class PickerViewModel: ObservableObject {
 
     /// Creates a group with subgroups based on common path prefixes (recursive)
     /// - Parameters:
-    ///   - domain: The apex domain (used for group id prefix)
-    ///   - host: The full host (used for display name prefix)
+    ///   - host: The full host (used for both id and display name)
     ///   - tabs: The tabs to group
     ///   - pathPrefix: The path components already consumed by parent groups
     private func createGroupWithSubgroups(
-        domain: String,
         host: String,
         tabs: [TabInfo],
         pathPrefix: [String] = []
@@ -401,13 +397,12 @@ class PickerViewModel: ObservableObject {
             if pathTabs.count >= minGroupSize {
                 let newPathPrefix = pathPrefix + [component]
                 let pathString = newPathPrefix.joined(separator: "/")
-                let subgroupId = "\(domain)/\(pathString)"
+                let subgroupId = "\(host)/\(pathString)"
                 let subgroupDisplayName = "\(host)/\(pathString)"
 
                 if pathTabs.count > 10 {
                     // Recursively create deeper subgroups
                     subgroups.append(createGroupWithSubgroups(
-                        domain: domain,
                         host: host,
                         tabs: pathTabs,
                         pathPrefix: newPathPrefix
@@ -435,11 +430,11 @@ class PickerViewModel: ObservableObject {
         let groupId: String
         let groupDisplayName: String
         if pathPrefix.isEmpty {
-            groupId = domain
+            groupId = host
             groupDisplayName = host
         } else {
             let pathString = pathPrefix.joined(separator: "/")
-            groupId = "\(domain)/\(pathString)"
+            groupId = "\(host)/\(pathString)"
             groupDisplayName = "\(host)/\(pathString)"
         }
 
