@@ -44,27 +44,36 @@ hyperlink [OPTIONS]
 |------|-------------|---------|
 | `--browser <name>` | Browser to query: `safari`, `chrome`, `arc`, `brave`, `edge`, `orion` | Frontmost browser |
 | `--tab <spec>` | Tab specifier: 1-based index, `active`, or `all` | `active` |
-| `--stdout` | Output to stdout instead of clipboard | Off (clipboard) |
-| `--format <fmt>` | Output format: `markdown`, `json` (for `--stdout`) | `markdown` |
+| `--copy` | Copy to clipboard instead of stdout | Off |
+| `--paste [app]` | Paste to app (name or bundle ID). Uses frontmost app if no argument. | Off |
+| `--format <fmt>` | Output format: `markdown`, `json` | `markdown` |
 | `--save-data <path>` | Save all browser data to JSON file and exit | |
 | `--mock-data <path>` | Load mock data from JSON instead of querying browsers | |
 | `--help` | Show help message | |
 | `--version` | Show version | |
 
+**Output modes** (mutually exclusive):
+- **Default**: Output to stdout
+- **`--copy`**: Write to clipboard (markdown + RTF)
+- **`--paste`**: Paste directly into target app without modifying clipboard
+
 ### Examples
 
 ```bash
-# Copy active tab of frontmost browser to clipboard
+# Output active tab of frontmost browser to stdout (default)
 hyperlink --tab active
 
 # Copy third tab of Safari to clipboard
-hyperlink --browser safari --tab 3
+hyperlink --browser safari --tab 3 --copy
 
 # Output all Chrome tabs as JSON to stdout
-hyperlink --browser chrome --tab all --stdout --format json
+hyperlink --browser chrome --tab all --format json
 
-# Copy active tab of Arc to clipboard
-hyperlink --browser arc
+# Paste active tab of Arc to Notes app
+hyperlink --browser arc --paste Notes
+
+# Paste to frontmost app (by bundle ID)
+hyperlink --browser safari --paste com.apple.Notes
 ```
 
 ### Output Formats
@@ -131,13 +140,25 @@ When `--mock-data` is specified, the app loads this JSON instead of querying rea
 
 ### Clipboard Format
 
-When copying to clipboard (default behavior), the tool sets both:
+When copying to clipboard (via `--copy` flag), the tool sets both:
 - **Plain text**: Markdown format `[Title](URL)`
 - **RTF**: Clickable hyperlink for rich text paste
 
+### Paste Mode
+
+When using `--paste`, the tool:
+1. Finds the target app by name (case-insensitive) or bundle ID (contains dots)
+2. Temporarily saves the current clipboard
+3. Writes the markdown to clipboard
+4. Activates the target app
+5. Sends Cmd+V keystroke via CGEvent
+6. Restores the original clipboard after a brief delay
+
+The target app must be running. If no app argument is provided, pastes to the frontmost app (the app that was active before hyperlink launched).
+
 ## GUI Mode
 
-Invoked when no command-line flags are provided (just `hyperlink`).
+Invoked when no command-line flags are provided (just `hyperlink`), or with only `--copy`, `--paste`, `--test`, or `--mock-data` flags.
 
 ### Window Behavior
 
@@ -162,7 +183,7 @@ Invoked when no command-line flags are provided (just `hyperlink`).
 │ ☐ 4. ● Some Other Tab                              │
 │ ☐ 5. ● Yet Another Tab                             │
 ├─────────────────────────────────────────────────────┤
-│                              [Copy Selected]        │
+│                        [Copy Selected (N)]          │  ← "Paste Selected" in paste mode
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -195,16 +216,25 @@ Invoked when no command-line flags are provided (just `hyperlink`).
 - Case-insensitive substring match
 - Filter applies across all windows
 
+### Output Mode
+
+GUI mode supports the same output modes as CLI:
+- **Default**: Copy to clipboard
+- **`--copy`**: Copy to clipboard (same as default)
+- **`--paste [app]`**: Paste to frontmost app (or specified app)
+
+The button text changes from "Copy Selected" to "Paste Selected" when in paste mode.
+
 ### Selection
 
 **Single selection**:
-- Click a row (not checkbox) to copy and close
+- Click a row (not checkbox) to output and close
 - Press number key 1-9 to select corresponding visible tab
-- Press Enter to copy currently highlighted row
+- Press Enter to output currently highlighted row
 
 **Multi-selection**:
 - Click checkboxes to select multiple tabs
-- Click "Copy Selected" button (or press Cmd+Enter) to copy all and close
+- Click "Copy/Paste Selected" button (or press Cmd+Enter) to output all and close
 
 ### Keyboard Shortcuts
 
@@ -640,9 +670,9 @@ Sources/
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Invalid arguments |
+| 0 | Success (tab selected and output) |
+| 1 | General error or user cancelled (ESC, click outside window) |
+| 2 | Invalid arguments (e.g., both `--copy` and `--paste` specified) |
 | 3 | Permission denied |
 | 4 | Browser not running |
 
