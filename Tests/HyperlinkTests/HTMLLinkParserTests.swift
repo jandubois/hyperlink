@@ -60,6 +60,23 @@ struct HTMLLinkParserTests {
         #expect(links[0].anchorText == "First") // Keeps first occurrence
     }
 
+    @Test("Deduplicates URLs with different fragments")
+    func deduplicatesURLsWithFragments() {
+        let html = """
+            <a href="https://example.com/page">No fragment</a>
+            <a href="https://example.com/page#section1">Section 1</a>
+            <a href="https://example.com/page#section2">Section 2</a>
+            <a href="https://other.com#top">Other</a>
+            """
+        let links = HTMLLinkParser.extractLinks(from: html, baseURL: baseURL)
+
+        #expect(links.count == 2)
+        #expect(links[0].url.absoluteString == "https://example.com/page")
+        #expect(links[0].anchorText == "No fragment") // Keeps first occurrence
+        #expect(links[1].url.absoluteString == "https://other.com")
+        #expect(links[1].url.fragment == nil) // Fragment stripped
+    }
+
     @Test("Cleans anchor text")
     func cleansAnchorText() {
         let html = """

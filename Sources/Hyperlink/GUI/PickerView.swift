@@ -419,10 +419,10 @@ struct PickerView: View {
             return true
         }
 
-        // Space toggles checkbox
+        // Space toggles checkbox (for both tabs and group headers)
         if event.keyCode == 49 { // Space
             if let index = viewModel.highlightedIndex {
-                viewModel.toggleSelection(at: index)
+                viewModel.toggleSelectionAtDisplayIndex(index)
             }
             return true
         }

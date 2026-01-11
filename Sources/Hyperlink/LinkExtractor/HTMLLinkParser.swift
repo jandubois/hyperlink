@@ -20,7 +20,7 @@ enum HTMLLinkParser {
     /// - Parameters:
     ///   - html: The HTML source string
     ///   - baseURL: Base URL for resolving relative links
-    /// - Returns: Deduplicated array of links (first occurrence kept)
+    /// - Returns: Deduplicated array of links (first occurrence kept, fragments stripped for deduplication)
     static func extractLinks(from html: String, baseURL: URL) -> [ParsedLink] {
         var seen = Set<URL>()
         var links: [ParsedLink] = []
@@ -49,25 +49,38 @@ enum HTMLLinkParser {
             let href = String(html[hrefRange])
             let rawText = String(html[textRange])
 
-            // Resolve the URL
+            // Resolve the URL and strip fragment for deduplication
             guard let url = resolveURL(href, baseURL: baseURL),
-                  isHTTPURL(url),
-                  !seen.contains(url) else {
+                  isHTTPURL(url) else {
                 continue
             }
 
-            seen.insert(url)
+            let urlWithoutFragment = stripFragment(from: url)
+            guard !seen.contains(urlWithoutFragment) else {
+                continue
+            }
+
+            seen.insert(urlWithoutFragment)
 
             // Clean up anchor text (strip HTML tags, normalize whitespace)
             let anchorText = cleanAnchorText(rawText)
 
+            // Store URL without fragment
             links.append(ParsedLink(
-                url: url,
+                url: urlWithoutFragment,
                 anchorText: anchorText.isEmpty ? nil : anchorText
             ))
         }
 
         return links
+    }
+
+    /// Strips the fragment from a URL
+    private static func stripFragment(from url: URL) -> URL {
+        guard url.fragment != nil else { return url }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.fragment = nil
+        return components?.url ?? url
     }
 
     /// Resolves a potentially relative URL against a base URL

@@ -287,22 +287,38 @@ class PickerViewModel: ObservableObject {
             }
         }
 
-        // Sort groups by count (descending), then alphabetically
-        groups.sort { a, b in
-            if a.totalCount != b.totalCount { return a.totalCount > b.totalCount }
-            return a.displayName < b.displayName
+        // Create a unified list of sortable items (groups and ungrouped tabs)
+        enum SortableItem {
+            case group(LinkGroup)
+            case tab(TabInfo)
+
+            var sortKey: String {
+                switch self {
+                case .group(let g): return g.displayName.lowercased()
+                case .tab(let t): return t.url.host?.lowercased() ?? t.url.absoluteString.lowercased()
+                }
+            }
+        }
+
+        var sortableItems: [SortableItem] = []
+        sortableItems.append(contentsOf: groups.map { .group($0) })
+        sortableItems.append(contentsOf: ungroupedTabs.map { .tab($0) })
+
+        // Sort by domain name (displayName for groups, host for tabs)
+        sortableItems.sort { a, b in
+            a.sortKey.localizedCaseInsensitiveCompare(b.sortKey) == .orderedAscending
         }
 
         // Build flat display items
         var items: [DisplayItem] = []
 
-        for group in groups {
-            appendGroupItems(group: group, indentLevel: 0, to: &items)
-        }
-
-        // Ungrouped tabs at the end (no indent, no header)
-        for tab in ungroupedTabs {
-            items.append(.tab(tab: tab, indentLevel: 0))
+        for sortableItem in sortableItems {
+            switch sortableItem {
+            case .group(let group):
+                appendGroupItems(group: group, indentLevel: 0, to: &items)
+            case .tab(let tab):
+                items.append(.tab(tab: tab, indentLevel: 0))
+            }
         }
 
         return items
