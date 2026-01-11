@@ -198,21 +198,20 @@ struct TabListView: View {
 
             hoveredIndex = index
 
-            // Start preview fetch after delay
             hoverTask = Task {
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled else { return }
-
-                // Check cache first - show immediately if available
+                // Check cache first - show immediately with no delay
                 if let cached = await OpenGraphCache.shared.getCached(for: tab.url) {
-                    previewMetadata = cached
-                    previewLoadFailed = false
+                    previewMetadata = cached.isEmpty ? nil : cached
+                    previewLoadFailed = cached.isEmpty
                     isLoadingPreview = false
                     updatePreviewPanel(for: tab.url)
                     return
                 }
 
-                // Fetch metadata (don't show loading state to avoid position jump)
+                // Delay before network fetch to avoid spam when scanning through list
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+
                 isLoadingPreview = true
                 previewLoadFailed = false
                 previewMetadata = nil
@@ -220,7 +219,6 @@ struct TabListView: View {
                 let metadata = await OpenGraphCache.shared.fetch(for: tab.url)
                 guard !Task.isCancelled else { return }
 
-                // Show preview only after content is loaded
                 isLoadingPreview = false
                 previewMetadata = metadata
                 previewLoadFailed = (metadata == nil)

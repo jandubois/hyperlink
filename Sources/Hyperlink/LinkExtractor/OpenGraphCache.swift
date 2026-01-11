@@ -44,9 +44,8 @@ actor OpenGraphCache {
         let result = await task.value
         inFlight[url] = nil
 
-        if let result = result {
-            cache[url] = result
-        }
+        // Cache result (including empty metadata for failed fetches)
+        cache[url] = result ?? OpenGraphMetadata(title: nil, description: nil, imageURL: nil)
 
         return result
     }
