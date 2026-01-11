@@ -329,7 +329,7 @@ class PickerViewModel: ObservableObject {
         items.append(.groupHeader(group: group, indentLevel: indentLevel))
 
         if !isGroupCollapsed(group.id) {
-            // Merge tabs and subgroups into a single sorted list by path component
+            // Merge tabs and subgroups, sort by full path
             enum ChildItem {
                 case tab(TabInfo)
                 case subgroup(LinkGroup)
@@ -337,13 +337,12 @@ class PickerViewModel: ObservableObject {
                 var sortKey: String {
                     switch self {
                     case .tab(let tab):
-                        // Use last path component for sorting
-                        let components = tab.url.pathComponents.filter { $0 != "/" }
-                        return components.last?.lowercased() ?? tab.url.absoluteString.lowercased()
+                        // Use host + path for sorting
+                        let host = tab.url.host ?? ""
+                        let path = tab.url.path
+                        return "\(host)\(path)".lowercased()
                     case .subgroup(let group):
-                        // Use last path component of display name
-                        let components = group.displayName.split(separator: "/")
-                        return components.last.map { String($0).lowercased() } ?? group.displayName.lowercased()
+                        return group.displayName.lowercased()
                     }
                 }
             }
