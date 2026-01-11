@@ -143,6 +143,7 @@ struct PickerView: View {
                     filteredTabs: viewModel.filteredTabs,
                     selectedTabs: $viewModel.selectedTabs,
                     highlightedIndex: $viewModel.highlightedIndex,
+                    hoverPreviewsEnabled: $viewModel.hoverPreviewsEnabled,
                     onSelect: { tab in
                         viewModel.copyAndDismiss(tab: tab)
                         onDismiss()
@@ -229,6 +230,12 @@ struct PickerView: View {
             }
             return event
         }
+
+        // Re-enable hover previews when mouse moves (disabled during keyboard navigation)
+        NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { event in
+            viewModel.hoverPreviewsEnabled = true
+            return event
+        }
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
@@ -268,6 +275,18 @@ struct PickerView: View {
             return true
         case 126: // Up arrow
             viewModel.moveHighlight(by: -1)
+            return true
+        case 115: // Home
+            viewModel.moveHighlightToStart()
+            return true
+        case 119: // End
+            viewModel.moveHighlightToEnd()
+            return true
+        case 116: // Page Up
+            viewModel.moveHighlightByPage(-1)
+            return true
+        case 121: // Page Down
+            viewModel.moveHighlightByPage(1)
             return true
         case 123: // Left arrow
             // Cmd+Left always switches browser; plain Left only when list has focus

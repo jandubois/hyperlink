@@ -3,8 +3,8 @@ import AppKit
 
 /// Preference key to collect row bounds
 struct RowBoundsPreferenceKey: PreferenceKey {
-    nonisolated(unsafe) static var defaultValue: [Int: CGRect] = [:]
-    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+    nonisolated(unsafe) static var defaultValue: [TabInfo: CGRect] = [:]
+    static func reduce(value: inout [TabInfo: CGRect], nextValue: () -> [TabInfo: CGRect]) {
         value.merge(nextValue()) { $1 }
     }
 }
@@ -122,17 +122,18 @@ struct TabListView: View {
     let filteredTabs: [TabInfo]
     @Binding var selectedTabs: Set<PickerViewModel.TabIdentifier>
     @Binding var highlightedIndex: Int?
+    @Binding var hoverPreviewsEnabled: Bool
     let onSelect: (TabInfo) -> Void
     var onExtract: ((TabInfo, Int) -> Void)? = nil
     var onOpenInBrowser: ((TabInfo) -> Void)? = nil
 
     // Preview state (lifted up from individual rows)
-    @State private var hoveredIndex: Int?
+    @State private var hoveredTab: TabInfo?
     @State private var previewMetadata: OpenGraphMetadata?
     @State private var isLoadingPreview = false
     @State private var previewLoadFailed = false
     @State private var hoverTask: Task<Void, Never>?
-    @State private var rowBounds: [Int: CGRect] = [:]
+    @State private var rowBounds: [TabInfo: CGRect] = [:]
 
     private let previewNamespace = "tabListPreview"
 
@@ -150,16 +151,17 @@ struct TabListView: View {
                             onSelect: { onSelect(tab) },
                             onExtract: { onExtract?(tab, index) },
                             onOpenInBrowser: { onOpenInBrowser?(tab) },
-                            onHover: { hovering in handleRowHover(index: index, tab: tab, hovering: hovering) }
+                            onHover: { hovering in handleRowHover(tab: tab, hovering: hovering) }
                         )
                         .background(
                             GeometryReader { geo in
                                 Color.clear.preference(
                                     key: RowBoundsPreferenceKey.self,
-                                    value: [index: geo.frame(in: .global)]
+                                    value: [tab: geo.frame(in: .global)]
                                 )
                             }
                         )
+                        .id(tab)
                     }
                 }
                 .padding(.vertical, 4)
@@ -168,9 +170,9 @@ struct TabListView: View {
                 rowBounds = bounds
             }
             .onChange(of: highlightedIndex) { oldValue, newValue in
-                if let index = newValue {
+                if let index = newValue, index < filteredTabs.count {
                     withAnimation {
-                        proxy.scrollTo(index, anchor: .center)
+                        proxy.scrollTo(filteredTabs[index], anchor: .center)
                     }
                 }
             }
@@ -180,23 +182,32 @@ struct TabListView: View {
             // Clear preview state when switching browsers
             clearPreviewState()
         }
+        .onChange(of: hoverPreviewsEnabled) { _, enabled in
+            // Hide preview when keyboard navigation disables hover previews
+            if !enabled {
+                PreviewPanelController.shared.hide()
+            }
+        }
         .onDisappear {
             PreviewPanelController.shared.hide()
         }
     }
 
-    private func handleRowHover(index: Int, tab: TabInfo, hovering: Bool) {
+    private func handleRowHover(tab: TabInfo, hovering: Bool) {
         if hovering {
+            // Ignore hover events when previews are disabled (keyboard navigation)
+            guard hoverPreviewsEnabled else { return }
+
             // Cancel any pending task
             hoverTask?.cancel()
 
-            // If same index and already have data, just update panel position
-            if index == hoveredIndex && (previewMetadata != nil || isLoadingPreview) {
-                updatePreviewPanel(for: tab.url)
+            // If same tab and already have data, just update panel position
+            if tab == hoveredTab && (previewMetadata != nil || isLoadingPreview) {
+                updatePreviewPanel(for: tab)
                 return
             }
 
-            hoveredIndex = index
+            hoveredTab = tab
 
             hoverTask = Task {
                 // Check cache first - show immediately with no delay
@@ -204,7 +215,7 @@ struct TabListView: View {
                     previewMetadata = cached.isEmpty ? nil : cached
                     previewLoadFailed = cached.isEmpty
                     isLoadingPreview = false
-                    updatePreviewPanel(for: tab.url)
+                    updatePreviewPanel(for: tab)
                     return
                 }
 
@@ -222,11 +233,11 @@ struct TabListView: View {
                 isLoadingPreview = false
                 previewMetadata = metadata
                 previewLoadFailed = (metadata == nil)
-                updatePreviewPanel(for: tab.url)
+                updatePreviewPanel(for: tab)
             }
         } else {
             // Only clear if leaving the currently hovered row
-            if hoveredIndex == index {
+            if hoveredTab == tab {
                 hoverTask?.cancel()
                 hoverTask = nil
                 clearPreviewState()
@@ -234,9 +245,8 @@ struct TabListView: View {
         }
     }
 
-    private func updatePreviewPanel(for url: URL) {
-        guard let index = hoveredIndex,
-              let rowRect = rowBounds[index],
+    private func updatePreviewPanel(for tab: TabInfo) {
+        guard let rowRect = rowBounds[tab],
               let window = NSApp.keyWindow ?? NSApp.mainWindow,
               let contentView = window.contentView else { return }
 
@@ -246,7 +256,7 @@ struct TabListView: View {
         let screenPoint = window.convertPoint(toScreen: NSPoint(x: 0, y: appKitY))
 
         let content = LinkPreviewView(
-            url: url,
+            url: tab.url,
             metadata: previewMetadata,
             isLoading: isLoadingPreview,
             loadFailed: previewLoadFailed
@@ -256,7 +266,7 @@ struct TabListView: View {
     }
 
     private func clearPreviewState() {
-        hoveredIndex = nil
+        hoveredTab = nil
         previewMetadata = nil
         isLoadingPreview = false
         previewLoadFailed = false

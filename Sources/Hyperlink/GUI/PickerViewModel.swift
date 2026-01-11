@@ -22,6 +22,9 @@ class PickerViewModel: ObservableObject {
     /// Whether the search field has focus (vs the tab list)
     @Published var searchFieldHasFocus: Bool = false
 
+    /// Whether hover previews are enabled (disabled during keyboard navigation)
+    @Published var hoverPreviewsEnabled: Bool = true
+
     /// Toast message to display (auto-dismisses)
     @Published var toastMessage: String? = nil
 
@@ -306,6 +309,32 @@ class PickerViewModel: ObservableObject {
             newIndex = 0
         }
 
+        hoverPreviewsEnabled = false
+        highlightedIndex = newIndex
+    }
+
+    func moveHighlightToStart() {
+        guard !filteredTabs.isEmpty else { return }
+        hoverPreviewsEnabled = false
+        highlightedIndex = 0
+    }
+
+    func moveHighlightToEnd() {
+        guard !filteredTabs.isEmpty else { return }
+        hoverPreviewsEnabled = false
+        highlightedIndex = filteredTabs.count - 1
+    }
+
+    func moveHighlightByPage(_ direction: Int) {
+        let pageSize = 10
+        let count = filteredTabs.count
+        guard count > 0 else { return }
+
+        let current = highlightedIndex ?? 0
+        var newIndex = current + (direction * pageSize)
+        newIndex = max(0, min(count - 1, newIndex))
+
+        hoverPreviewsEnabled = false
         highlightedIndex = newIndex
     }
 
