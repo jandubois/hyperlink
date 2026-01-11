@@ -344,7 +344,7 @@ class PickerViewModel: ObservableObject {
         var subgroups: [LinkGroup] = []
         var remainingTabs: [TabInfo] = noPathTabs
 
-        for (path, pathTabs) in pathGroups.sorted(by: { $0.value.count > $1.value.count }) {
+        for (path, pathTabs) in pathGroups.sorted(by: { $0.key < $1.key }) {
             if pathTabs.count >= minGroupSize {
                 subgroups.append(LinkGroup(
                     id: "\(domain)/\(path)",
