@@ -20,7 +20,7 @@ enum HTMLLinkParser {
     /// - Parameters:
     ///   - html: The HTML source string
     ///   - baseURL: Base URL for resolving relative links
-    /// - Returns: Deduplicated array of links (first occurrence kept, fragments stripped for deduplication)
+    /// - Returns: Deduplicated array of links (first occurrence kept, normalized for deduplication)
     static func extractLinks(from html: String, baseURL: URL) -> [ParsedLink] {
         var seen = Set<URL>()
         var links: [ParsedLink] = []
@@ -49,25 +49,25 @@ enum HTMLLinkParser {
             let href = String(html[hrefRange])
             let rawText = String(html[textRange])
 
-            // Resolve the URL and strip fragment for deduplication
+            // Resolve the URL and normalize for deduplication
             guard let url = resolveURL(href, baseURL: baseURL),
                   isHTTPURL(url) else {
                 continue
             }
 
-            let urlWithoutFragment = stripFragment(from: url)
-            guard !seen.contains(urlWithoutFragment) else {
+            let normalizedURL = normalizeForDeduplication(url)
+            guard !seen.contains(normalizedURL) else {
                 continue
             }
 
-            seen.insert(urlWithoutFragment)
+            seen.insert(normalizedURL)
 
             // Clean up anchor text (strip HTML tags, normalize whitespace)
             let anchorText = cleanAnchorText(rawText)
 
-            // Store URL without fragment
+            // Store normalized URL
             links.append(ParsedLink(
-                url: urlWithoutFragment,
+                url: normalizedURL,
                 anchorText: anchorText.isEmpty ? nil : anchorText
             ))
         }
@@ -75,11 +75,16 @@ enum HTMLLinkParser {
         return links
     }
 
-    /// Strips the fragment from a URL
-    private static func stripFragment(from url: URL) -> URL {
-        guard url.fragment != nil else { return url }
+    /// Normalizes a URL for deduplication (strips fragment, trailing slash)
+    private static func normalizeForDeduplication(_ url: URL) -> URL {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
         components?.fragment = nil
+
+        // Strip trailing slash from path (but keep root "/" intact)
+        if let path = components?.path, path.count > 1 && path.hasSuffix("/") {
+            components?.path = String(path.dropLast())
+        }
+
         return components?.url ?? url
     }
 
