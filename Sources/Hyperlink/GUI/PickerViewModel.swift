@@ -270,12 +270,14 @@ class PickerViewModel: ObservableObject {
         for domain in sortedDomains {
             guard let domainTabs = domainGroups[domain] else { continue }
             if domainTabs.count >= minGroupSize {
+                // Use full host for display name (e.g., www.suse.com instead of suse)
+                let fullHost = domainTabs[0].url.host ?? domain
                 if domainTabs.count > 10 {
-                    groups.append(createGroupWithSubgroups(domain: domain, tabs: domainTabs))
+                    groups.append(createGroupWithSubgroups(domain: domain, host: fullHost, tabs: domainTabs))
                 } else {
                     groups.append(LinkGroup(
                         id: domain,
-                        displayName: DomainFormatter.displayName(for: domainTabs[0].url),
+                        displayName: fullHost,
                         tabs: domainTabs,
                         subgroups: []
                     ))
@@ -323,7 +325,7 @@ class PickerViewModel: ObservableObject {
     }
 
     /// Creates a group with subgroups based on common path prefixes
-    private func createGroupWithSubgroups(domain: String, tabs: [TabInfo]) -> LinkGroup {
+    private func createGroupWithSubgroups(domain: String, host: String, tabs: [TabInfo]) -> LinkGroup {
         // Extract first path component for each URL
         var pathGroups: [String: [TabInfo]] = [:]
         var noPathTabs: [TabInfo] = []
@@ -345,7 +347,7 @@ class PickerViewModel: ObservableObject {
             if pathTabs.count >= minGroupSize {
                 subgroups.append(LinkGroup(
                     id: "\(domain)/\(path)",
-                    displayName: "/\(path)",
+                    displayName: "\(host)/\(path)",  // Full path: www.suse.com/products
                     tabs: pathTabs,
                     subgroups: []
                 ))
@@ -362,7 +364,7 @@ class PickerViewModel: ObservableObject {
 
         return LinkGroup(
             id: domain,
-            displayName: DomainFormatter.displayName(for: tabs[0].url),
+            displayName: host,  // Full host: www.suse.com
             tabs: remainingTabs,
             subgroups: subgroups
         )
@@ -615,6 +617,118 @@ class PickerViewModel: ObservableObject {
 
         hoverPreviewsEnabled = false
         highlightedIndex = newIndex
+    }
+
+    // MARK: - Group Navigation
+
+    /// Collapse or expand the current group (Left/Right arrow keys)
+    func toggleCurrentGroupCollapsed(collapse: Bool) {
+        guard let index = highlightedIndex else { return }
+        let items = displayItems
+        guard index < items.count else { return }
+
+        switch items[index] {
+        case .groupHeader(let group, _):
+            // On a group header: collapse/expand it
+            if collapse && !isGroupCollapsed(group.id) {
+                toggleGroupCollapsed(group.id)
+            } else if !collapse && isGroupCollapsed(group.id) {
+                toggleGroupCollapsed(group.id)
+            }
+        case .tab(_, _):
+            // On a tab: find parent group and collapse it (only for Left)
+            if collapse, let parentIndex = findParentGroupIndex(for: index) {
+                highlightedIndex = parentIndex
+                if case .groupHeader(let group, _) = items[parentIndex] {
+                    if !isGroupCollapsed(group.id) {
+                        toggleGroupCollapsed(group.id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Find the index of the parent group header for a tab at the given index
+    private func findParentGroupIndex(for tabIndex: Int) -> Int? {
+        let items = displayItems
+        // Search backwards for a group header
+        for i in stride(from: tabIndex - 1, through: 0, by: -1) {
+            if case .groupHeader = items[i] {
+                return i
+            }
+        }
+        return nil
+    }
+
+    /// Move to next group header (Cmd+Down)
+    func moveToNextGroupHeader() {
+        let items = displayItems
+        guard !items.isEmpty else { return }
+
+        let startIndex = (highlightedIndex ?? -1) + 1
+
+        // Find next group header
+        for i in startIndex..<items.count {
+            if case .groupHeader = items[i] {
+                hoverPreviewsEnabled = false
+                highlightedIndex = i
+                return
+            }
+        }
+
+        // Wrap to beginning
+        for i in 0..<startIndex {
+            if case .groupHeader = items[i] {
+                hoverPreviewsEnabled = false
+                highlightedIndex = i
+                return
+            }
+        }
+    }
+
+    /// Move to previous group header at same or higher level (Cmd+Up)
+    func moveToPreviousGroupHeader() {
+        let items = displayItems
+        guard !items.isEmpty else { return }
+        guard let currentIndex = highlightedIndex, currentIndex < items.count else {
+            // Find last group header
+            for i in stride(from: items.count - 1, through: 0, by: -1) {
+                if case .groupHeader = items[i] {
+                    hoverPreviewsEnabled = false
+                    highlightedIndex = i
+                    return
+                }
+            }
+            return
+        }
+
+        // Get current indent level (for determining "same or higher level")
+        let currentIndent: Int
+        if case .groupHeader(_, let indent) = items[currentIndex] {
+            currentIndent = indent
+        } else if case .tab(_, let indent) = items[currentIndex] {
+            currentIndent = indent
+        } else {
+            currentIndent = 0
+        }
+
+        // Search backwards for a group header at same or higher level
+        for i in stride(from: currentIndex - 1, through: 0, by: -1) {
+            if case .groupHeader(_, let indent) = items[i], indent <= currentIndent {
+                hoverPreviewsEnabled = false
+                highlightedIndex = i
+                return
+            }
+        }
+
+        // Wrap to end, looking for any group header
+        for i in stride(from: items.count - 1, through: currentIndex + 1, by: -1) {
+            if case .groupHeader = items[i] {
+                hoverPreviewsEnabled = false
+                highlightedIndex = i
+                return
+            }
+        }
     }
 
     func switchBrowser(by delta: Int) {

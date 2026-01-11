@@ -275,10 +275,18 @@ struct PickerView: View {
         // Navigation: up/down always work, left/right depend on focus and modifiers
         switch event.keyCode {
         case 125: // Down arrow
-            viewModel.moveHighlight(by: 1)
+            if hasCmd {
+                viewModel.moveToNextGroupHeader()
+            } else {
+                viewModel.moveHighlight(by: 1)
+            }
             return true
         case 126: // Up arrow
-            viewModel.moveHighlight(by: -1)
+            if hasCmd {
+                viewModel.moveToPreviousGroupHeader()
+            } else {
+                viewModel.moveHighlight(by: -1)
+            }
             return true
         case 115: // Home
             viewModel.moveHighlightToStart()
@@ -293,22 +301,22 @@ struct PickerView: View {
             viewModel.moveHighlightByPage(1)
             return true
         case 123: // Left arrow
-            // Cmd+Left always switches browser; plain Left only when list has focus
+            // Cmd+Left switches browser; plain Left collapses group (when list has focus)
             if hasCmd {
                 viewModel.switchBrowser(by: -1)
                 return true
             } else if !viewModel.searchFieldHasFocus {
-                viewModel.switchBrowser(by: -1)
+                viewModel.toggleCurrentGroupCollapsed(collapse: true)
                 return true
             }
             return false // Let text field handle cursor movement
         case 124: // Right arrow
-            // Cmd+Right always switches browser; plain Right only when list has focus
+            // Cmd+Right switches browser; plain Right expands group (when list has focus)
             if hasCmd {
                 viewModel.switchBrowser(by: 1)
                 return true
             } else if !viewModel.searchFieldHasFocus {
-                viewModel.switchBrowser(by: 1)
+                viewModel.toggleCurrentGroupCollapsed(collapse: false)
                 return true
             }
             return false // Let text field handle cursor movement
@@ -330,12 +338,16 @@ struct PickerView: View {
                 // Copy checkbox-selected tabs
                 viewModel.copySelected()
                 onDismiss()
-            } else if let index = viewModel.highlightedIndex,
-               index < viewModel.filteredTabs.count {
-                // Copy highlighted tab
-                let tab = viewModel.filteredTabs[index]
-                viewModel.copyAndDismiss(tab: tab)
-                onDismiss()
+            } else if let item = viewModel.highlightedDisplayItem {
+                switch item {
+                case .tab(let tab, _):
+                    // Copy highlighted tab
+                    viewModel.copyAndDismiss(tab: tab)
+                    onDismiss()
+                case .groupHeader(let group, _):
+                    // Toggle group selection
+                    viewModel.toggleGroupSelection(group)
+                }
             }
             return true
         default:
