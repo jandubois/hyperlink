@@ -329,14 +329,39 @@ class PickerViewModel: ObservableObject {
         items.append(.groupHeader(group: group, indentLevel: indentLevel))
 
         if !isGroupCollapsed(group.id) {
-            // Direct tabs first (indented one level deeper if group has subgroups)
-            let tabIndent = group.hasSubgroups ? indentLevel + 1 : indentLevel
-            for tab in group.tabs {
-                items.append(.tab(tab: tab, indentLevel: tabIndent))
+            // Merge tabs and subgroups into a single sorted list by path component
+            enum ChildItem {
+                case tab(TabInfo)
+                case subgroup(LinkGroup)
+
+                var sortKey: String {
+                    switch self {
+                    case .tab(let tab):
+                        // Use last path component for sorting
+                        let components = tab.url.pathComponents.filter { $0 != "/" }
+                        return components.last?.lowercased() ?? tab.url.absoluteString.lowercased()
+                    case .subgroup(let group):
+                        // Use last path component of display name
+                        let components = group.displayName.split(separator: "/")
+                        return components.last.map { String($0).lowercased() } ?? group.displayName.lowercased()
+                    }
+                }
             }
-            // Then subgroups (recursively)
-            for subgroup in group.subgroups {
-                appendGroupItems(group: subgroup, indentLevel: indentLevel + 1, to: &items)
+
+            var children: [ChildItem] = []
+            children.append(contentsOf: group.tabs.map { .tab($0) })
+            children.append(contentsOf: group.subgroups.map { .subgroup($0) })
+
+            children.sort { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
+
+            let tabIndent = group.hasSubgroups ? indentLevel + 1 : indentLevel
+            for child in children {
+                switch child {
+                case .tab(let tab):
+                    items.append(.tab(tab: tab, indentLevel: tabIndent))
+                case .subgroup(let subgroup):
+                    appendGroupItems(group: subgroup, indentLevel: indentLevel + 1, to: &items)
+                }
             }
         }
     }
