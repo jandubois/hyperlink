@@ -215,7 +215,6 @@ struct PickerView: View {
             viewModel.isShowingOverlay = newValue || showSettings
         }
         .onChange(of: viewModel.selectedBrowserIndex) { _, _ in
-            viewModel.selectedTabs.removeAll()
             viewModel.highlightActiveTab()
         }
         .onChange(of: viewModel.searchFieldHasFocus) { _, newValue in

@@ -264,11 +264,10 @@ struct TabListView: View {
     }
 
     private func isTabSelected(_ tab: TabInfo) -> Bool {
-        // Check if this tab is in selectedTabs
         for window in windows.enumerated() {
             if let tabIndex = window.element.tabs.firstIndex(where: { $0.index == tab.index && $0.url == tab.url }) {
                 let identifier = PickerViewModel.TabIdentifier(
-                    browserIndex: 0, // Will be set by view model
+                    browserIndex: browserIndex,
                     windowIndex: window.offset,
                     tabIndex: tabIndex
                 )
@@ -284,7 +283,7 @@ struct TabListView: View {
         for window in windows.enumerated() {
             if let tabIndex = window.element.tabs.firstIndex(where: { $0.index == tab.index && $0.url == tab.url }) {
                 let identifier = PickerViewModel.TabIdentifier(
-                    browserIndex: 0,
+                    browserIndex: browserIndex,
                     windowIndex: window.offset,
                     tabIndex: tabIndex
                 )
