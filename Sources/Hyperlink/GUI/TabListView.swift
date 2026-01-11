@@ -140,14 +140,18 @@ struct TabListView: View {
 
     private let previewNamespace = "tabListPreview"
 
+    /// Cached display items to avoid rebuilding on every render
+    @State private var cachedDisplayItems: [PickerViewModel.DisplayItem] = []
+
     var body: some View {
+        let items = viewModel.displayItems
+
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    if viewModel.isGroupingEnabled {
-                        groupedContent
-                    } else {
-                        flatContent
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        displayItemView(item: item, index: index)
+                            .id(item.id)
                     }
                 }
                 .padding(.vertical, 4)
@@ -156,20 +160,18 @@ struct TabListView: View {
                 rowBounds = bounds
             }
             .onChange(of: highlightedIndex) { oldValue, newValue in
-                if let index = newValue, index < filteredTabs.count {
+                if let index = newValue, index < items.count {
                     withAnimation {
-                        proxy.scrollTo(filteredTabs[index], anchor: .center)
+                        proxy.scrollTo(items[index].id, anchor: .center)
                     }
                 }
             }
         }
         .id(browserIndex)  // Force complete refresh when browser changes
         .onChange(of: browserIndex) { _, _ in
-            // Clear preview state when switching browsers
             clearPreviewState()
         }
         .onChange(of: hoverPreviewsEnabled) { _, enabled in
-            // Hide preview when keyboard navigation disables hover previews
             if !enabled {
                 PreviewPanelController.shared.hide()
             }
@@ -179,85 +181,29 @@ struct TabListView: View {
         }
     }
 
-    /// Display item for flattened grouped list
-    private enum GroupedDisplayItem: Identifiable {
-        case groupHeader(group: PickerViewModel.LinkGroup, indentLevel: Int)
-        case tabRow(tab: TabInfo, globalIndex: Int, indentLevel: Int)
-
-        var id: String {
-            switch self {
-            case .groupHeader(let group, _):
-                return "header-\(group.id)"
-            case .tabRow(let tab, _, _):
-                return "tab-\(tab.url.absoluteString)-\(tab.index)"
-            }
-        }
-    }
-
-    /// Flat list content (original behavior)
+    /// Renders a single display item (either group header or tab row)
     @ViewBuilder
-    private var flatContent: some View {
-        ForEach(Array(filteredTabs.enumerated()), id: \.element) { index, tab in
-            tabRow(tab: tab, index: index)
+    private func displayItemView(item: PickerViewModel.DisplayItem, index: Int) -> some View {
+        switch item {
+        case .groupHeader(let group, let indentLevel):
+            GroupHeaderView(
+                group: group,
+                isCollapsed: viewModel.isGroupCollapsed(group.id),
+                isFullySelected: viewModel.isGroupFullySelected(group),
+                isPartiallySelected: viewModel.isGroupPartiallySelected(group),
+                indentLevel: indentLevel,
+                isHighlighted: highlightedIndex == index,
+                onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
+                onToggleSelection: { viewModel.toggleGroupSelection(group) }
+            )
+        case .tab(let tab, let indentLevel):
+            tabRowView(tab: tab, index: index, indentLevel: indentLevel)
         }
     }
 
-    /// Grouped content - flattened to single ForEach for stable rendering
+    /// Single tab row with indentation
     @ViewBuilder
-    private var groupedContent: some View {
-        let items = buildGroupedDisplayItems()
-        ForEach(items) { item in
-            switch item {
-            case .groupHeader(let group, let indentLevel):
-                GroupHeaderView(
-                    group: group,
-                    isCollapsed: viewModel.isGroupCollapsed(group.id),
-                    isFullySelected: viewModel.isGroupFullySelected(group),
-                    isPartiallySelected: viewModel.isGroupPartiallySelected(group),
-                    indentLevel: indentLevel,
-                    onToggleCollapsed: { viewModel.toggleGroupCollapsed(group.id) },
-                    onToggleSelection: { viewModel.toggleGroupSelection(group) }
-                )
-            case .tabRow(let tab, let globalIndex, let indentLevel):
-                tabRow(tab: tab, index: globalIndex, indentLevel: indentLevel)
-            }
-        }
-    }
-
-    /// Builds a flat list of display items from the grouped structure
-    private func buildGroupedDisplayItems() -> [GroupedDisplayItem] {
-        var items: [GroupedDisplayItem] = []
-
-        for group in viewModel.groupedTabs {
-            items.append(.groupHeader(group: group, indentLevel: 0))
-
-            if !viewModel.isGroupCollapsed(group.id) {
-                // Add subgroups
-                for subgroup in group.subgroups {
-                    items.append(.groupHeader(group: subgroup, indentLevel: 1))
-
-                    if !viewModel.isGroupCollapsed(subgroup.id) {
-                        for tab in subgroup.tabs {
-                            let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
-                            items.append(.tabRow(tab: tab, globalIndex: globalIndex, indentLevel: 1))
-                        }
-                    }
-                }
-
-                // Add direct tabs
-                for tab in group.tabs {
-                    let globalIndex = filteredTabs.firstIndex(of: tab) ?? 0
-                    items.append(.tabRow(tab: tab, globalIndex: globalIndex, indentLevel: 0))
-                }
-            }
-        }
-
-        return items
-    }
-
-    /// Single tab row with optional indentation
-    @ViewBuilder
-    private func tabRow(tab: TabInfo, index: Int, indentLevel: Int = 0) -> some View {
+    private func tabRowView(tab: TabInfo, index: Int, indentLevel: Int) -> some View {
         TabRowView(
             tab: tab,
             index: index,
@@ -403,6 +349,7 @@ struct GroupHeaderView: View {
     let isFullySelected: Bool
     let isPartiallySelected: Bool
     let indentLevel: Int
+    var isHighlighted: Bool = false
     let onToggleCollapsed: () -> Void
     let onToggleSelection: () -> Void
 
@@ -443,7 +390,7 @@ struct GroupHeaderView: View {
         .padding(.horizontal, 12)
         .padding(.leading, CGFloat(indentLevel) * 16)
         .padding(.vertical, 6)
-        .background(Color.secondary.opacity(0.05))
+        .background(isHighlighted ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.05))
         .contentShape(Rectangle())
         .onTapGesture {
             onToggleCollapsed()

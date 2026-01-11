@@ -117,7 +117,7 @@ class PickerViewModel: ObservableObject {
     }
 
     /// A group of tabs sharing a common domain or path prefix
-    struct LinkGroup: Identifiable {
+    struct LinkGroup: Identifiable, Equatable {
         let id: String  // Domain or domain+path
         let displayName: String
         var tabs: [TabInfo]
@@ -134,6 +134,47 @@ class PickerViewModel: ObservableObject {
         /// All tabs including those in subgroups (flattened)
         var allTabs: [TabInfo] {
             tabs + subgroups.flatMap { $0.allTabs }
+        }
+
+        static func == (lhs: LinkGroup, rhs: LinkGroup) -> Bool {
+            lhs.id == rhs.id
+        }
+    }
+
+    /// A display item in the grouped list (either a group header or a tab)
+    enum DisplayItem: Identifiable, Equatable {
+        case groupHeader(group: LinkGroup, indentLevel: Int)
+        case tab(tab: TabInfo, indentLevel: Int)
+
+        var id: String {
+            switch self {
+            case .groupHeader(let group, _):
+                return "group:\(group.id)"
+            case .tab(let tab, _):
+                return "tab:\(tab.url.absoluteString):\(tab.index)"
+            }
+        }
+
+        var isGroupHeader: Bool {
+            if case .groupHeader = self { return true }
+            return false
+        }
+
+        var asTab: TabInfo? {
+            if case .tab(let tab, _) = self { return tab }
+            return nil
+        }
+
+        var asGroup: LinkGroup? {
+            if case .groupHeader(let group, _) = self { return group }
+            return nil
+        }
+
+        var indentLevel: Int {
+            switch self {
+            case .groupHeader(_, let level), .tab(_, let level):
+                return level
+            }
         }
     }
 
@@ -180,16 +221,38 @@ class PickerViewModel: ObservableObject {
         return sorted
     }
 
-    /// Tabs grouped by domain, with subgroups for common path prefixes
-    var groupedTabs: [LinkGroup] {
-        createGroups(from: filteredTabs)
-    }
-
     /// Minimum number of items to form a group
     private let minGroupSize = 3
 
-    /// Creates groups from a list of tabs
-    private func createGroups(from tabs: [TabInfo]) -> [LinkGroup] {
+    /// Flat list of display items for the current view mode
+    var displayItems: [DisplayItem] {
+        guard isGroupingEnabled else {
+            // Flat mode: just tabs
+            return filteredTabs.map { DisplayItem.tab(tab: $0, indentLevel: 0) }
+        }
+        return buildDisplayItems()
+    }
+
+    /// Number of navigable items (for keyboard navigation)
+    var displayItemCount: Int {
+        displayItems.count
+    }
+
+    /// The currently highlighted display item, if any
+    var highlightedDisplayItem: DisplayItem? {
+        guard let index = highlightedIndex, index < displayItems.count else { return nil }
+        return displayItems[index]
+    }
+
+    /// The currently highlighted tab, if any (nil if a group header is highlighted)
+    var highlightedTab: TabInfo? {
+        highlightedDisplayItem?.asTab
+    }
+
+    /// Builds the flat list of display items
+    private func buildDisplayItems() -> [DisplayItem] {
+        let tabs = filteredTabs
+
         // Group by apex domain
         var domainGroups: [String: [TabInfo]] = [:]
         for tab in tabs {
@@ -197,28 +260,16 @@ class PickerViewModel: ObservableObject {
             domainGroups[domain, default: []].append(tab)
         }
 
-        // Sort domains by count (descending), then alphabetically
-        let sortedDomains = domainGroups.keys.sorted { a, b in
-            let countA = domainGroups[a]?.count ?? 0
-            let countB = domainGroups[b]?.count ?? 0
-            if countA != countB { return countA > countB }
-            return a < b
-        }
-
-        var result: [LinkGroup] = []
+        // Separate into groups (≥3 items) and ungrouped
+        var groups: [LinkGroup] = []
         var ungroupedTabs: [TabInfo] = []
 
-        for domain in sortedDomains {
-            guard let domainTabs = domainGroups[domain] else { continue }
-
-            // Only create a group if we have enough items
+        for (domain, domainTabs) in domainGroups {
             if domainTabs.count >= minGroupSize {
-                // For large groups, try to create subgroups by path prefix
                 if domainTabs.count > 10 {
-                    let group = createGroupWithSubgroups(domain: domain, tabs: domainTabs)
-                    result.append(group)
+                    groups.append(createGroupWithSubgroups(domain: domain, tabs: domainTabs))
                 } else {
-                    result.append(LinkGroup(
+                    groups.append(LinkGroup(
                         id: domain,
                         displayName: DomainFormatter.displayName(for: domainTabs[0].url),
                         tabs: domainTabs,
@@ -226,22 +277,45 @@ class PickerViewModel: ObservableObject {
                     ))
                 }
             } else {
-                // Too few items - add to ungrouped
                 ungroupedTabs.append(contentsOf: domainTabs)
             }
         }
 
-        // Add ungrouped items as "Other" group if there are any
-        if !ungroupedTabs.isEmpty {
-            result.append(LinkGroup(
-                id: "_other",
-                displayName: "Other",
-                tabs: ungroupedTabs,
-                subgroups: []
-            ))
+        // Sort groups by count (descending), then alphabetically
+        groups.sort { a, b in
+            if a.totalCount != b.totalCount { return a.totalCount > b.totalCount }
+            return a.displayName < b.displayName
         }
 
-        return result
+        // Build flat display items
+        var items: [DisplayItem] = []
+
+        for group in groups {
+            items.append(.groupHeader(group: group, indentLevel: 0))
+
+            if !isGroupCollapsed(group.id) {
+                // Subgroups first
+                for subgroup in group.subgroups {
+                    items.append(.groupHeader(group: subgroup, indentLevel: 1))
+                    if !isGroupCollapsed(subgroup.id) {
+                        for tab in subgroup.tabs {
+                            items.append(.tab(tab: tab, indentLevel: 1))
+                        }
+                    }
+                }
+                // Direct tabs
+                for tab in group.tabs {
+                    items.append(.tab(tab: tab, indentLevel: 0))
+                }
+            }
+        }
+
+        // Ungrouped tabs at the end (no indent, no header)
+        for tab in ungroupedTabs {
+            items.append(.tab(tab: tab, indentLevel: 0))
+        }
+
+        return items
     }
 
     /// Creates a group with subgroups based on common path prefixes
@@ -495,7 +569,7 @@ class PickerViewModel: ObservableObject {
     }
 
     func moveHighlight(by delta: Int) {
-        let count = filteredTabs.count
+        let count = displayItemCount
         guard count > 0 else { return }
 
         let current = highlightedIndex ?? -1
@@ -512,20 +586,20 @@ class PickerViewModel: ObservableObject {
     }
 
     func moveHighlightToStart() {
-        guard !filteredTabs.isEmpty else { return }
+        guard displayItemCount > 0 else { return }
         hoverPreviewsEnabled = false
         highlightedIndex = 0
     }
 
     func moveHighlightToEnd() {
-        guard !filteredTabs.isEmpty else { return }
+        guard displayItemCount > 0 else { return }
         hoverPreviewsEnabled = false
-        highlightedIndex = filteredTabs.count - 1
+        highlightedIndex = displayItemCount - 1
     }
 
     func moveHighlightByPage(_ direction: Int) {
         let pageSize = 10
-        let count = filteredTabs.count
+        let count = displayItemCount
         guard count > 0 else { return }
 
         let current = highlightedIndex ?? 0
@@ -552,12 +626,39 @@ class PickerViewModel: ObservableObject {
     }
 
     func highlightActiveTab() {
-        if let activeIndex = filteredTabs.firstIndex(where: { $0.isActive }) {
+        let items = displayItems
+        // Find the active tab in display items
+        if let activeIndex = items.firstIndex(where: { item in
+            if case .tab(let tab, _) = item {
+                return tab.isActive
+            }
+            return false
+        }) {
             highlightedIndex = activeIndex
-        } else if !filteredTabs.isEmpty {
+        } else if !items.isEmpty {
             highlightedIndex = 0
         } else {
             highlightedIndex = nil
+        }
+    }
+
+    /// Toggle selection for a display item at the given index
+    /// For tabs: toggles the tab's selection
+    /// For groups: selects all if not fully selected, deselects all if fully selected
+    func toggleSelectionAtDisplayIndex(_ index: Int) {
+        let items = displayItems
+        guard index < items.count else { return }
+
+        switch items[index] {
+        case .tab(let tab, _):
+            let identifier = tabIdentifier(for: tab)
+            if selectedTabs.contains(identifier) {
+                selectedTabs.remove(identifier)
+            } else {
+                selectedTabs.insert(identifier)
+            }
+        case .groupHeader(let group, _):
+            toggleGroupSelection(group)
         }
     }
 
