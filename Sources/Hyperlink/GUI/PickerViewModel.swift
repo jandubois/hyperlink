@@ -300,7 +300,12 @@ class PickerViewModel: ObservableObject {
             items.append(.groupHeader(group: group, indentLevel: 0))
 
             if !isGroupCollapsed(group.id) {
-                // Subgroups first
+                // Direct tabs first (indented if group has subgroups)
+                let tabIndent = group.hasSubgroups ? 1 : 0
+                for tab in group.tabs {
+                    items.append(.tab(tab: tab, indentLevel: tabIndent))
+                }
+                // Then subgroups
                 for subgroup in group.subgroups {
                     items.append(.groupHeader(group: subgroup, indentLevel: 1))
                     if !isGroupCollapsed(subgroup.id) {
@@ -308,10 +313,6 @@ class PickerViewModel: ObservableObject {
                             items.append(.tab(tab: tab, indentLevel: 1))
                         }
                     }
-                }
-                // Direct tabs
-                for tab in group.tabs {
-                    items.append(.tab(tab: tab, indentLevel: 0))
                 }
             }
         }
@@ -628,16 +629,32 @@ class PickerViewModel: ObservableObject {
         guard index < items.count else { return }
 
         switch items[index] {
-        case .groupHeader(let group, _):
-            // On a group header: collapse/expand it
-            if collapse && !isGroupCollapsed(group.id) {
-                toggleGroupCollapsed(group.id)
-            } else if !collapse && isGroupCollapsed(group.id) {
-                toggleGroupCollapsed(group.id)
+        case .groupHeader(let group, let indentLevel):
+            if collapse {
+                // Collapsing: if already collapsed or this is a subgroup, go to parent
+                if isGroupCollapsed(group.id) || indentLevel > 0 {
+                    // Find parent group header (lower indent level)
+                    if let parentIndex = findParentGroupIndex(for: index, maxIndent: indentLevel - 1) {
+                        highlightedIndex = parentIndex
+                        if case .groupHeader(let parentGroup, _) = items[parentIndex] {
+                            if !isGroupCollapsed(parentGroup.id) {
+                                toggleGroupCollapsed(parentGroup.id)
+                            }
+                        }
+                    }
+                } else {
+                    // Collapse this group
+                    toggleGroupCollapsed(group.id)
+                }
+            } else {
+                // Expanding: expand this group if collapsed
+                if isGroupCollapsed(group.id) {
+                    toggleGroupCollapsed(group.id)
+                }
             }
-        case .tab(_, _):
+        case .tab(_, let indentLevel):
             // On a tab: find parent group and collapse it (only for Left)
-            if collapse, let parentIndex = findParentGroupIndex(for: index) {
+            if collapse, let parentIndex = findParentGroupIndex(for: index, maxIndent: indentLevel) {
                 highlightedIndex = parentIndex
                 if case .groupHeader(let group, _) = items[parentIndex] {
                     if !isGroupCollapsed(group.id) {
@@ -648,13 +665,16 @@ class PickerViewModel: ObservableObject {
         }
     }
 
-    /// Find the index of the parent group header for a tab at the given index
-    private func findParentGroupIndex(for tabIndex: Int) -> Int? {
+    /// Find the index of the parent group header for an item at the given index
+    /// maxIndent: only return headers with indent level <= this value (-1 means any)
+    private func findParentGroupIndex(for itemIndex: Int, maxIndent: Int = -1) -> Int? {
         let items = displayItems
         // Search backwards for a group header
-        for i in stride(from: tabIndex - 1, through: 0, by: -1) {
-            if case .groupHeader = items[i] {
-                return i
+        for i in stride(from: itemIndex - 1, through: 0, by: -1) {
+            if case .groupHeader(_, let indent) = items[i] {
+                if maxIndent < 0 || indent <= maxIndent {
+                    return i
+                }
             }
         }
         return nil
