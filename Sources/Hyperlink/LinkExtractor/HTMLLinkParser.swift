@@ -75,9 +75,15 @@ enum HTMLLinkParser {
         return links
     }
 
-    /// Normalizes a URL for deduplication (strips fragment, trailing slash)
+    /// Normalizes a URL for deduplication (normalizes protocol, strips fragment, trailing slash)
     private static func normalizeForDeduplication(_ url: URL) -> URL {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+
+        // Normalize HTTP to HTTPS
+        if components?.scheme?.lowercased() == "http" {
+            components?.scheme = "https"
+        }
+
         components?.fragment = nil
 
         // Strip trailing slash from path (but keep root "/" intact)

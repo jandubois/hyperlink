@@ -60,12 +60,12 @@ struct HTMLLinkParserTests {
         #expect(links[0].anchorText == "First") // Keeps first occurrence
     }
 
-    @Test("Normalizes URLs for deduplication (fragments, trailing slashes)")
+    @Test("Normalizes URLs for deduplication (protocol, fragments, trailing slashes)")
     func normalizesURLsForDeduplication() {
         let html = """
-            <a href="https://example.com/page">No fragment</a>
+            <a href="https://example.com/page">HTTPS</a>
+            <a href="http://example.com/page">HTTP duplicate</a>
             <a href="https://example.com/page#section1">Section 1</a>
-            <a href="https://example.com/page#section2">Section 2</a>
             <a href="https://other.com#top">Other</a>
             <a href="https://slash.com/path/">With slash</a>
             <a href="https://slash.com/path">Without slash</a>
@@ -74,7 +74,7 @@ struct HTMLLinkParserTests {
 
         #expect(links.count == 3)
         #expect(links[0].url.absoluteString == "https://example.com/page")
-        #expect(links[0].anchorText == "No fragment") // Keeps first occurrence
+        #expect(links[0].anchorText == "HTTPS") // Keeps first occurrence (HTTP normalized to HTTPS)
         #expect(links[1].url.absoluteString == "https://other.com")
         #expect(links[1].url.fragment == nil) // Fragment stripped
         #expect(links[2].url.absoluteString == "https://slash.com/path")
