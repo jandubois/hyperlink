@@ -1,4 +1,119 @@
 import SwiftUI
+import AppKit
+
+/// Preference key to collect row bounds
+struct RowBoundsPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// Manages a floating preview panel that appears to the left of the main window.
+///
+/// Uses NSPanel to display content outside the main window bounds. Key design decisions:
+///
+/// - Fresh hosting view each time: We create a new NSHostingView for each show() call.
+///   Reusing the hosting view caused stale content to flash briefly when switching rows,
+///   because SwiftUI doesn't update synchronously when setting rootView.
+///
+/// - GeometryReader for size changes: Content size can change after initial display
+///   (e.g., when AsyncImage loads). We use onChange(of: geo.size) to reposition the
+///   panel whenever the content size changes, keeping it centered on the row.
+///
+/// - Deferred orderFront: We show the panel in an async block after setting content,
+///   giving SwiftUI time to lay out before the panel becomes visible.
+///
+/// - Screen coordinate conversion: The screenY parameter is in macOS screen coordinates
+///   (Y=0 at bottom). We center the panel vertically on this position.
+@MainActor
+class PreviewPanelController: ObservableObject {
+    static let shared = PreviewPanelController()
+
+    private var panel: NSPanel?
+    private var hostingView: NSHostingView<AnyView>?
+    private var screenY: CGFloat = 0
+    private var windowFrame: NSRect = .zero
+
+    @Published var isVisible = false
+
+    private init() {}
+
+    func show(content: some View, atY screenY: CGFloat) {
+        let previewWidth: CGFloat = 300
+
+        guard let mainWindow = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        self.windowFrame = mainWindow.frame
+        self.screenY = screenY
+
+        let wrappedContent = AnyView(
+            content
+                .frame(width: previewWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.windowBackgroundColor))
+                        .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
+                )
+                .padding(16)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.onChange(of: geo.size) { _, newSize in
+                            PreviewPanelController.shared.reposition(forSize: newSize)
+                        }
+                    }
+                )
+        )
+
+        if panel == nil {
+            let panel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: previewWidth + 32, height: 200),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.level = .floating
+            panel.hasShadow = false
+            panel.isMovable = false
+            panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.isReleasedWhenClosed = false
+
+            self.panel = panel
+        }
+
+        // Create fresh hosting view to avoid stale content flashing when switching rows
+        let hosting = NSHostingView(rootView: wrappedContent)
+        panel?.contentView = hosting
+        self.hostingView = hosting
+
+        // Position and show after SwiftUI has laid out content
+        DispatchQueue.main.async { [self] in
+            reposition(forSize: hosting.fittingSize)
+
+            if !isVisible {
+                panel?.orderFront(nil)
+                isVisible = true
+            }
+        }
+    }
+
+    func reposition(forSize size: CGSize) {
+        guard let panel = panel, size.width > 0, size.height > 0 else { return }
+
+        let x = windowFrame.minX - size.width - 12
+        let y = screenY - size.height / 2  // Center vertically on the row
+
+        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+        isVisible = false
+    }
+}
 
 /// Scrollable list of tabs grouped by window
 struct TabListView: View {
@@ -10,6 +125,16 @@ struct TabListView: View {
     let onSelect: (TabInfo) -> Void
     var onExtract: ((TabInfo, Int) -> Void)? = nil
     var onOpenInBrowser: ((TabInfo) -> Void)? = nil
+
+    // Preview state (lifted up from individual rows)
+    @State private var hoveredIndex: Int?
+    @State private var previewMetadata: OpenGraphMetadata?
+    @State private var isLoadingPreview = false
+    @State private var previewLoadFailed = false
+    @State private var hoverTask: Task<Void, Never>?
+    @State private var rowBounds: [Int: CGRect] = [:]
+
+    private let previewNamespace = "tabListPreview"
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -24,11 +149,23 @@ struct TabListView: View {
                             onToggleCheck: { toggleSelection(tab) },
                             onSelect: { onSelect(tab) },
                             onExtract: { onExtract?(tab, index) },
-                            onOpenInBrowser: { onOpenInBrowser?(tab) }
+                            onOpenInBrowser: { onOpenInBrowser?(tab) },
+                            onHover: { hovering in handleRowHover(index: index, tab: tab, hovering: hovering) }
+                        )
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: RowBoundsPreferenceKey.self,
+                                    value: [index: geo.frame(in: .global)]
+                                )
+                            }
                         )
                     }
                 }
                 .padding(.vertical, 4)
+            }
+            .onPreferenceChange(RowBoundsPreferenceKey.self) { bounds in
+                rowBounds = bounds
             }
             .onChange(of: highlightedIndex) { oldValue, newValue in
                 if let index = newValue {
@@ -39,6 +176,93 @@ struct TabListView: View {
             }
         }
         .id(browserIndex)  // Force complete refresh when browser changes
+        .onChange(of: browserIndex) { _, _ in
+            // Clear preview state when switching browsers
+            clearPreviewState()
+        }
+        .onDisappear {
+            PreviewPanelController.shared.hide()
+        }
+    }
+
+    private func handleRowHover(index: Int, tab: TabInfo, hovering: Bool) {
+        if hovering {
+            // Cancel any pending task
+            hoverTask?.cancel()
+
+            // If same index and already have data, just update panel position
+            if index == hoveredIndex && (previewMetadata != nil || isLoadingPreview) {
+                updatePreviewPanel(for: tab.url)
+                return
+            }
+
+            hoveredIndex = index
+
+            // Start preview fetch after delay
+            hoverTask = Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+
+                // Check cache first - show immediately if available
+                if let cached = await OpenGraphCache.shared.getCached(for: tab.url) {
+                    previewMetadata = cached
+                    previewLoadFailed = false
+                    isLoadingPreview = false
+                    updatePreviewPanel(for: tab.url)
+                    return
+                }
+
+                // Fetch metadata (don't show loading state to avoid position jump)
+                isLoadingPreview = true
+                previewLoadFailed = false
+                previewMetadata = nil
+
+                let metadata = await OpenGraphCache.shared.fetch(for: tab.url)
+                guard !Task.isCancelled else { return }
+
+                // Show preview only after content is loaded
+                isLoadingPreview = false
+                previewMetadata = metadata
+                previewLoadFailed = (metadata == nil)
+                updatePreviewPanel(for: tab.url)
+            }
+        } else {
+            // Only clear if leaving the currently hovered row
+            if hoveredIndex == index {
+                hoverTask?.cancel()
+                hoverTask = nil
+                clearPreviewState()
+            }
+        }
+    }
+
+    private func updatePreviewPanel(for url: URL) {
+        guard let index = hoveredIndex,
+              let rowRect = rowBounds[index],
+              let window = NSApp.keyWindow ?? NSApp.mainWindow,
+              let contentView = window.contentView else { return }
+
+        // Convert from SwiftUI coordinates to screen coordinates
+        let contentHeight = contentView.frame.height
+        let appKitY = contentHeight - rowRect.midY
+        let screenPoint = window.convertPoint(toScreen: NSPoint(x: 0, y: appKitY))
+
+        let content = LinkPreviewView(
+            url: url,
+            metadata: previewMetadata,
+            isLoading: isLoadingPreview,
+            loadFailed: previewLoadFailed
+        )
+
+        PreviewPanelController.shared.show(content: content, atY: screenPoint.y)
+    }
+
+    private func clearPreviewState() {
+        hoveredIndex = nil
+        previewMetadata = nil
+        isLoadingPreview = false
+        previewLoadFailed = false
+        PreviewPanelController.shared.hide()
     }
 
     private func isTabSelected(_ tab: TabInfo) -> Bool {
@@ -87,13 +311,9 @@ struct TabRowView: View {
     let onSelect: () -> Void
     var onExtract: (() -> Void)? = nil
     var onOpenInBrowser: (() -> Void)? = nil
+    var onHover: ((Bool) -> Void)? = nil
 
     @State private var isHovering = false
-    @State private var showPreview = false
-    @State private var previewMetadata: OpenGraphMetadata?
-    @State private var isLoadingPreview = false
-    @State private var previewLoadFailed = false
-    @State private var hoverTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -141,14 +361,6 @@ struct TabRowView: View {
                     .lineLimit(1)
                     .foregroundColor(.secondary)
             }
-            .popover(isPresented: $showPreview, arrowEdge: .trailing) {
-                LinkPreviewView(
-                    url: tab.url,
-                    metadata: previewMetadata,
-                    isLoading: isLoadingPreview,
-                    loadFailed: previewLoadFailed
-                )
-            }
 
             Spacer()
 
@@ -177,42 +389,7 @@ struct TabRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
-            if hovering {
-                // Start preview fetch after delay
-                hoverTask = Task {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    guard !Task.isCancelled else { return }
-
-                    // Check cache first - show immediately if available
-                    if let cached = await OpenGraphCache.shared.getCached(for: tab.url) {
-                        previewMetadata = cached
-                        showPreview = true
-                        return
-                    }
-
-                    // Show popover with loading state
-                    isLoadingPreview = true
-                    previewLoadFailed = false
-                    showPreview = true
-
-                    // Fetch metadata
-                    let metadata = await OpenGraphCache.shared.fetch(for: tab.url)
-                    guard !Task.isCancelled else { return }
-
-                    // Update with fetched data
-                    isLoadingPreview = false
-                    previewMetadata = metadata
-                    previewLoadFailed = (metadata == nil)
-                }
-            } else {
-                // Cancel pending fetch and hide preview
-                hoverTask?.cancel()
-                hoverTask = nil
-                showPreview = false
-                isLoadingPreview = false
-                previewLoadFailed = false
-                previewMetadata = nil
-            }
+            onHover?(hovering)
         }
         .onTapGesture {
             onSelect()
@@ -251,11 +428,8 @@ struct LinkPreviewView: View {
                                 .aspectRatio(contentMode: .fill)
                                 .frame(maxWidth: 280, maxHeight: 150)
                                 .clipped()
-                        case .failure:
+                        case .failure, .empty:
                             EmptyView()
-                        case .empty:
-                            ProgressView()
-                                .frame(width: 280, height: 100)
                         @unknown default:
                             EmptyView()
                         }
