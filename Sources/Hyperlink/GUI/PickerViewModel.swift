@@ -297,24 +297,7 @@ class PickerViewModel: ObservableObject {
         var items: [DisplayItem] = []
 
         for group in groups {
-            items.append(.groupHeader(group: group, indentLevel: 0))
-
-            if !isGroupCollapsed(group.id) {
-                // Direct tabs first (indented if group has subgroups)
-                let tabIndent = group.hasSubgroups ? 1 : 0
-                for tab in group.tabs {
-                    items.append(.tab(tab: tab, indentLevel: tabIndent))
-                }
-                // Then subgroups
-                for subgroup in group.subgroups {
-                    items.append(.groupHeader(group: subgroup, indentLevel: 1))
-                    if !isGroupCollapsed(subgroup.id) {
-                        for tab in subgroup.tabs {
-                            items.append(.tab(tab: tab, indentLevel: 1))
-                        }
-                    }
-                }
-            }
+            appendGroupItems(group: group, indentLevel: 0, to: &items)
         }
 
         // Ungrouped tabs at the end (no indent, no header)
@@ -325,16 +308,46 @@ class PickerViewModel: ObservableObject {
         return items
     }
 
-    /// Creates a group with subgroups based on common path prefixes
-    private func createGroupWithSubgroups(domain: String, host: String, tabs: [TabInfo]) -> LinkGroup {
-        // Extract first path component for each URL
+    /// Recursively append group items to the display list
+    private func appendGroupItems(group: LinkGroup, indentLevel: Int, to items: inout [DisplayItem]) {
+        items.append(.groupHeader(group: group, indentLevel: indentLevel))
+
+        if !isGroupCollapsed(group.id) {
+            // Direct tabs first (indented one level deeper if group has subgroups)
+            let tabIndent = group.hasSubgroups ? indentLevel + 1 : indentLevel
+            for tab in group.tabs {
+                items.append(.tab(tab: tab, indentLevel: tabIndent))
+            }
+            // Then subgroups (recursively)
+            for subgroup in group.subgroups {
+                appendGroupItems(group: subgroup, indentLevel: indentLevel + 1, to: &items)
+            }
+        }
+    }
+
+    /// Creates a group with subgroups based on common path prefixes (recursive)
+    /// - Parameters:
+    ///   - domain: The apex domain (used for group id prefix)
+    ///   - host: The full host (used for display name prefix)
+    ///   - tabs: The tabs to group
+    ///   - pathPrefix: The path components already consumed by parent groups
+    private func createGroupWithSubgroups(
+        domain: String,
+        host: String,
+        tabs: [TabInfo],
+        pathPrefix: [String] = []
+    ) -> LinkGroup {
+        let depth = pathPrefix.count
+
+        // Group by the next path component
         var pathGroups: [String: [TabInfo]] = [:]
         var noPathTabs: [TabInfo] = []
 
         for tab in tabs {
             let pathComponents = tab.url.pathComponents.filter { $0 != "/" }
-            if let firstPath = pathComponents.first {
-                pathGroups[firstPath, default: []].append(tab)
+            if pathComponents.count > depth {
+                let component = pathComponents[depth]
+                pathGroups[component, default: []].append(tab)
             } else {
                 noPathTabs.append(tab)
             }
@@ -344,28 +357,55 @@ class PickerViewModel: ObservableObject {
         var subgroups: [LinkGroup] = []
         var remainingTabs: [TabInfo] = noPathTabs
 
-        for (path, pathTabs) in pathGroups.sorted(by: { $0.key < $1.key }) {
+        for (component, pathTabs) in pathGroups.sorted(by: { $0.key < $1.key }) {
             if pathTabs.count >= minGroupSize {
-                subgroups.append(LinkGroup(
-                    id: "\(domain)/\(path)",
-                    displayName: "\(host)/\(path)",  // Full path: www.suse.com/products
-                    tabs: pathTabs,
-                    subgroups: []
-                ))
+                let newPathPrefix = pathPrefix + [component]
+                let pathString = newPathPrefix.joined(separator: "/")
+                let subgroupId = "\(domain)/\(pathString)"
+                let subgroupDisplayName = "\(host)/\(pathString)"
+
+                if pathTabs.count > 10 {
+                    // Recursively create deeper subgroups
+                    subgroups.append(createGroupWithSubgroups(
+                        domain: domain,
+                        host: host,
+                        tabs: pathTabs,
+                        pathPrefix: newPathPrefix
+                    ))
+                } else {
+                    subgroups.append(LinkGroup(
+                        id: subgroupId,
+                        displayName: subgroupDisplayName,
+                        tabs: pathTabs,
+                        subgroups: []
+                    ))
+                }
             } else {
                 remainingTabs.append(contentsOf: pathTabs)
             }
         }
 
-        // Sort subgroups by count descending, then alphabetically
+        // Sort subgroups by total count descending, then alphabetically
         subgroups.sort { a, b in
-            if a.tabs.count != b.tabs.count { return a.tabs.count > b.tabs.count }
+            if a.totalCount != b.totalCount { return a.totalCount > b.totalCount }
             return a.displayName < b.displayName
         }
 
+        // Build group id and display name
+        let groupId: String
+        let groupDisplayName: String
+        if pathPrefix.isEmpty {
+            groupId = domain
+            groupDisplayName = host
+        } else {
+            let pathString = pathPrefix.joined(separator: "/")
+            groupId = "\(domain)/\(pathString)"
+            groupDisplayName = "\(host)/\(pathString)"
+        }
+
         return LinkGroup(
-            id: domain,
-            displayName: host,  // Full host: www.suse.com
+            id: groupId,
+            displayName: groupDisplayName,
             tabs: remainingTabs,
             subgroups: subgroups
         )
