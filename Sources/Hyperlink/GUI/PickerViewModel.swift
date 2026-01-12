@@ -589,14 +589,16 @@ class PickerViewModel: ObservableObject {
 
         for browser in runningBrowsers {
             do {
-                let windows = try BrowserRegistry.windowsSync(for: browser)
-                if !windows.isEmpty {
-                    let source = BrowserRegistry.source(for: browser)
-                    browserDataList.append(BrowserData(
-                        name: source.name,
-                        icon: source.icon,
-                        windows: windows
-                    ))
+                // Use instancesSync to get profile-aware browser instances
+                let instances = try BrowserRegistry.instancesSync(for: browser)
+                for instance in instances {
+                    if !instance.windows.isEmpty {
+                        browserDataList.append(BrowserData(
+                            name: instance.displayName,
+                            icon: instance.icon,
+                            windows: instance.windows
+                        ))
+                    }
                 }
             } catch let error as LinkSourceError {
                 if case .permissionDenied = error {

@@ -41,6 +41,38 @@ enum BrowserRegistry {
         return try browserSource.windowsSync()
     }
 
+    /// Fetch browser instances from a browser synchronously (handles profiles)
+    static func instancesSync(for browser: BrowserDetector.KnownBrowser) throws -> [BrowserInstance] {
+        let browserSource = source(for: browser)
+        return try browserSource.instancesSync()
+    }
+
+    /// Fetch all browser instances from all running browsers (sync version)
+    static func allInstancesSync() throws -> [BrowserInstance] {
+        var instances: [BrowserInstance] = []
+        var lastError: Error?
+
+        for source in runningSources() {
+            do {
+                let browserInstances = try source.instancesSync()
+                instances.append(contentsOf: browserInstances)
+            } catch let error as LinkSourceError {
+                if case .permissionDenied = error {
+                    throw error  // Re-throw permission errors
+                }
+                lastError = error
+            } catch {
+                lastError = error
+            }
+        }
+
+        if instances.isEmpty, let error = lastError {
+            throw error
+        }
+
+        return instances
+    }
+
     /// Fetch all browser instances from all running browsers
     static func allInstances() async throws -> [BrowserInstance] {
         var instances: [BrowserInstance] = []

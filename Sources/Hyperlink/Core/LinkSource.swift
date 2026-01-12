@@ -72,6 +72,9 @@ protocol LinkSource: Sendable {
     /// Fetch all windows and tabs from this source (async wrapper)
     func windows() async throws -> [WindowInfo]
 
+    /// Fetch windows grouped by profile (for browsers that support profiles) - sync version
+    func instancesSync() throws -> [BrowserInstance]
+
     /// Fetch windows grouped by profile (for browsers that support profiles)
     func instances() async throws -> [BrowserInstance]
 }
@@ -96,10 +99,15 @@ extension LinkSource {
         try windowsSync()
     }
 
-    // Default implementation for sources that don't support profiles
-    func instances() async throws -> [BrowserInstance] {
-        let windows = try await windows()
+    // Default sync implementation for sources that don't support profiles
+    func instancesSync() throws -> [BrowserInstance] {
+        let windows = try windowsSync()
         return [BrowserInstance(source: self, profileName: nil, windows: windows)]
+    }
+
+    // Default async implementation for sources that don't support profiles
+    func instances() async throws -> [BrowserInstance] {
+        try instancesSync()
     }
 }
 
