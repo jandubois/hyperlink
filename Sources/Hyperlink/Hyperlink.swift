@@ -80,24 +80,26 @@ struct Hyperlink: ParsableCommand {
         let shouldLaunchGUI = browser == nil && saveData == nil
 
         if shouldLaunchGUI {
-            launchGUIApp(testMode: test, copyMode: copy, pasteMode: pasteMode, pasteApp: pasteApp)
+            launchGUIApp(testMode: test, copyMode: copy, pasteMode: pasteMode, pasteApp: pasteApp, format: format)
             return
         }
 
         try runCLI()
     }
 
-    private func launchGUIApp(testMode: Bool, copyMode: Bool, pasteMode: Bool, pasteApp: String?) {
+    private func launchGUIApp(testMode: Bool, copyMode: Bool, pasteMode: Bool, pasteApp: String?, format: OutputFormat) {
         // Capture the frontmost browser before our window takes focus
         BrowserDetector.captureFrontmostBrowser()
 
         // Determine output mode for GUI
-        // Priority: paste > copy > default (clipboard)
+        // Priority: paste > copy > default (stdout)
         let outputMode: OutputMode
         if pasteMode {
             outputMode = .paste(app: pasteApp)  // nil means frontmost app
+        } else if copyMode {
+            outputMode = .clipboard
         } else {
-            outputMode = .clipboard  // Default for GUI
+            outputMode = .stdout(format: format)  // Default for GUI
         }
 
         // Launch the GUI application synchronously on the main thread.

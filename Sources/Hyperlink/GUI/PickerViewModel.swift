@@ -100,6 +100,12 @@ class PickerViewModel: ObservableObject {
         return false
     }
 
+    /// Whether we're in stdout mode (for UI labels)
+    var isStdoutMode: Bool {
+        if case .stdout = outputMode { return true }
+        return false
+    }
+
     let preferences = Preferences.shared
 
     init(targetAppBundleID: String? = nil, outputMode: OutputMode = .clipboard) {
@@ -1110,10 +1116,15 @@ class PickerViewModel: ObservableObject {
             targetBundleID: targetAppBundleID
         )
         let result = engine.apply(title: tab.title, url: tab.url)
-        ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
 
-        // If paste mode, paste to target app
-        if case .paste(let app) = outputMode {
+        switch outputMode {
+        case .stdout:
+            // Print markdown to stdout
+            print("[\(result.title)](\(result.url))")
+        case .clipboard:
+            ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
+        case .paste(let app):
+            ClipboardWriter.write(title: result.title, url: tab.url, transformedURL: result.url)
             do {
                 try OutputHandler.pasteToApp(app)
             } catch {
@@ -1135,10 +1146,18 @@ class PickerViewModel: ObservableObject {
             targetBundleID: targetAppBundleID
         )
         let format = preferences.multiSelectionFormat
-        ClipboardWriter.write(tabs, format: format, engine: engine)
 
-        // If paste mode, paste to target app
-        if case .paste(let app) = outputMode {
+        switch outputMode {
+        case .stdout:
+            // Print markdown to stdout
+            for tab in tabs {
+                let result = engine.apply(title: tab.title, url: tab.url)
+                print("[\(result.title)](\(result.url))")
+            }
+        case .clipboard:
+            ClipboardWriter.write(tabs, format: format, engine: engine)
+        case .paste(let app):
+            ClipboardWriter.write(tabs, format: format, engine: engine)
             do {
                 try OutputHandler.pasteToApp(app)
             } catch {

@@ -20,7 +20,14 @@ struct PickerView: View {
 
     /// Label for the copy/paste button based on selection state and output mode
     private var copyButtonLabel: String {
-        let action = viewModel.isPasteMode ? "Paste" : "Copy"
+        let action: String
+        if viewModel.isPasteMode {
+            action = "Paste"
+        } else if viewModel.isStdoutMode {
+            action = "Output"
+        } else {
+            action = "Copy"
+        }
         if viewModel.allFilteredTabsSelected {
             return "\(action) All"
         } else {
