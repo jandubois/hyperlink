@@ -105,19 +105,14 @@ enum BrowserDetector {
         }
     }
 
-    /// Get the display name for a browser
+    /// Get the display name for a browser (short form for UI)
     static func displayName(for browser: KnownBrowser) -> String {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browser.rawValue) {
-            return FileManager.default.displayName(atPath: url.path)
-        }
-
-        // Fallback names
         switch browser {
         case .safari: return "Safari"
-        case .chrome: return "Google Chrome"
+        case .chrome: return "Chrome"
         case .arc: return "Arc"
-        case .brave: return "Brave Browser"
-        case .edge: return "Microsoft Edge"
+        case .brave: return "Brave"
+        case .edge: return "Edge"
         case .orion: return "Orion"
         }
     }

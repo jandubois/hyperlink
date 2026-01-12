@@ -74,23 +74,15 @@ enum MockDataStore {
     /// Get a specific mock source by CLI name or display name (case-insensitive)
     static func mockSource(forName name: String) -> MockLinkSource? {
         // Map CLI names to display names for matching
-        let displayName = cliNameToDisplayName(name) ?? name
+        let displayName: String
+        if let browser = BrowserDetector.KnownBrowser.from(cliName: name) {
+            displayName = BrowserDetector.displayName(for: browser)
+        } else {
+            displayName = name
+        }
         let normalizedName = displayName.lowercased().replacingOccurrences(of: " ", with: "")
         return mockSources().first { source in
             source.name.lowercased().replacingOccurrences(of: " ", with: "") == normalizedName
-        }
-    }
-
-    /// Map CLI names to expected display names
-    private static func cliNameToDisplayName(_ cliName: String) -> String? {
-        switch cliName.lowercased() {
-        case "safari": return "Safari"
-        case "chrome": return "Google Chrome"
-        case "arc": return "Arc"
-        case "brave": return "Brave Browser"
-        case "edge": return "Microsoft Edge"
-        case "orion": return "Orion"
-        default: return nil
         }
     }
 
