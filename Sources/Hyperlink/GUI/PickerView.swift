@@ -30,18 +30,16 @@ struct PickerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header row: browser tabs (if multiple) + settings/help icons
+            // Header row: browser tabs + settings/help icons
             HStack(spacing: 8) {
-                if viewModel.allBrowserData.count > 1 {
-                    BrowserTabBar(
-                        browsers: viewModel.allBrowserData,
-                        selectedIndex: $viewModel.selectedBrowserIndex,
-                        extractedSourceCount: viewModel.extractedSourceCount,
-                        onClose: { index in
-                            viewModel.closeExtractedSource(at: index)
-                        }
-                    )
-                }
+                BrowserTabBar(
+                    browsers: viewModel.allBrowserData,
+                    selectedIndex: $viewModel.selectedBrowserIndex,
+                    extractedSourceCount: viewModel.extractedSourceCount,
+                    onClose: { index in
+                        viewModel.closeExtractedSource(at: index)
+                    }
+                )
 
                 Spacer()
 
