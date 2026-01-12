@@ -274,6 +274,7 @@ struct ChromiumSource: LinkSource {
     /// Window titles are formatted as:
     /// - Default profile: "Tab Title - Browser Name"
     /// - Other profiles: "Tab Title - Browser Name - Profile Name"
+    /// - With signed-in user: "Tab Title - Browser Name - Username (profilename)"
     private func extractProfileName(from windowTitle: String, using mapping: ProfileMapping) -> String? {
         let suffix = " - \(windowTitleSuffix)"
 
@@ -295,17 +296,39 @@ struct ChromiumSource: LinkSource {
             return nil
         }
 
+        // Extract profile name from "Username (profilename)" format if present
+        let profileName = extractProfileNameFromFormat(rawProfileName)
+
         // Check if this is the default profile's name
-        if rawProfileName == mapping.defaultProfileName {
+        if let defaultName = mapping.defaultProfileName,
+           extractProfileNameFromFormat(defaultName) == profileName {
             return nil  // Return nil for default profile to keep title short
         }
 
         // Check if this is a "Person N" placeholder that needs mapping
-        if let actualName = mapping.personToName[rawProfileName] {
-            return actualName
+        if let actualName = mapping.personToName[profileName] {
+            return extractProfileNameFromFormat(actualName)
         }
 
-        // Return the profile name as-is (it's already the custom name)
-        return rawProfileName
+        // Return the profile name (already stripped of username suffix)
+        return profileName
+    }
+
+    /// Extract profile name from Chrome's "Username (profilename)" format
+    /// When signed into a Google account, Chrome shows "Username (profilename)"
+    /// We want just the profile name (what's inside the parentheses)
+    private func extractProfileNameFromFormat(_ name: String) -> String {
+        // Match pattern: "Username (profilename)" -> "profilename"
+        if let parenStart = name.lastIndex(of: "("),
+           name.hasSuffix(")"),
+           parenStart > name.startIndex {
+            let startIndex = name.index(after: parenStart)
+            let endIndex = name.index(before: name.endIndex)
+            if startIndex < endIndex {
+                return String(name[startIndex..<endIndex])
+            }
+        }
+        // No parentheses format, return as-is
+        return name
     }
 }
