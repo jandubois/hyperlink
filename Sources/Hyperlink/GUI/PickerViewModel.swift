@@ -1056,6 +1056,11 @@ class PickerViewModel: ObservableObject {
         return unpinned.allSatisfy { selectedTabs.contains(tabIdentifier(for: $0)) }
     }
 
+    /// Returns true if any pinned tab is selected
+    var anyPinnedTabSelected: Bool {
+        filteredPinnedTabs.contains { selectedTabs.contains(tabIdentifier(for: $0)) }
+    }
+
     /// Select all currently visible (filtered) tabs
     func selectAllFilteredTabs() {
         for tab in filteredTabs {
@@ -1064,15 +1069,11 @@ class PickerViewModel: ObservableObject {
         }
     }
 
-    /// Select only unpinned tabs (deselects pinned ones)
+    /// Add all unpinned tabs to selection (preserves existing pinned selections)
     func selectAllUnpinnedTabs() {
-        for tab in filteredTabs {
+        for tab in filteredUnpinnedTabs {
             let identifier = tabIdentifier(for: tab)
-            if isTabPinned(tab) {
-                selectedTabs.remove(identifier)
-            } else {
-                selectedTabs.insert(identifier)
-            }
+            selectedTabs.insert(identifier)
         }
     }
 
@@ -1086,15 +1087,16 @@ class PickerViewModel: ObservableObject {
 
     /// Toggle select all with pinned tab awareness
     /// Cycle: None → All Unpinned → All → None
+    /// Select all only adds selections (monotonically increasing) until reset to none.
     func toggleSelectAll() {
         if allFilteredTabsSelected {
             // All selected → deselect all
             deselectAllFilteredTabs()
-        } else if allUnpinnedTabsSelected && hasPinnedTabs {
-            // All unpinned selected (but not all pinned) → select all
+        } else if anyPinnedTabSelected || allUnpinnedTabsSelected {
+            // Any pinned selected, or all unpinned selected → select all
             selectAllFilteredTabs()
         } else {
-            // Otherwise → select all unpinned
+            // Otherwise → add all unpinned to selection
             selectAllUnpinnedTabs()
         }
     }
