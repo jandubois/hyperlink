@@ -19,11 +19,11 @@ struct Hyperlink: ParsableCommand {
         version: "0.1.0"
     )
 
-    @Option(name: .long, help: "Browser to query: safari, chrome, arc, brave, edge, orion")
+    @Option(name: .long, help: "Browser to query: safari, chrome, arc, brave, edge, orion (default: frontmost)")
     var browser: String?
 
-    @Option(name: .long, help: "Tab to get: 1-based index, 'active', or 'all'")
-    var tab: String = "active"
+    @Option(name: .long, help: "Tab to get: 1-based index, 'active', or 'all' (default: active)")
+    var tab: String?
 
     @Flag(name: .long, help: "Copy to clipboard instead of stdout")
     var copy: Bool = false
@@ -75,9 +75,9 @@ struct Hyperlink: ParsableCommand {
             return
         }
 
-        // GUI launches when: no browser specified and no save-data
+        // GUI launches when: no browser specified, no tab specified, and no save-data
         // GUI-compatible flags: --copy, --paste, --paste-app, --test, --mock-data
-        let shouldLaunchGUI = browser == nil && saveData == nil
+        let shouldLaunchGUI = browser == nil && tab == nil && saveData == nil
 
         if shouldLaunchGUI {
             launchGUIApp(testMode: test, copyMode: copy, pasteMode: pasteMode, pasteApp: pasteApp, format: format)
@@ -221,8 +221,9 @@ struct Hyperlink: ParsableCommand {
             }
         }
 
-        // Handle tab selection
-        switch tab.lowercased() {
+        // Handle tab selection (default to "active")
+        let tabSpec = (tab ?? "active").lowercased()
+        switch tabSpec {
         case "active":
             guard let activeTab = windows.first?.activeTab ?? windows.first?.tabs.first else {
                 fputs("Error: No active tab found\n", stderr)
@@ -239,8 +240,8 @@ struct Hyperlink: ParsableCommand {
             try outputAllTabs(allTabs, source: source, windows: windows, pasteMode: pasteMode)
 
         default:
-            guard let index = Int(tab), index > 0 else {
-                fputs("Error: Invalid tab specifier '\(tab)'. Use a number, 'active', or 'all'\n", stderr)
+            guard let index = Int(tabSpec), index > 0 else {
+                fputs("Error: Invalid tab specifier '\(tabSpec)'. Use a number, 'active', or 'all'\n", stderr)
                 throw ExitCode(2)
             }
 
