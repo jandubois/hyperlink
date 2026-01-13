@@ -685,56 +685,105 @@ Sources/
 - URL shortening integration
 - Import/export transformation rules
 
-### Pinned Tab Detection (Research Notes)
+## Pinned Tab Detection
 
-**Problem**: Neither Chrome nor Safari expose pinned tab status via AppleScript.
+Pinned tabs are detected for Chrome and Safari browsers. Pinned tabs are always at the beginning of the tab list in each window.
 
-**Chrome AppleScript properties available**: `URL`, `name`, `loading`, `class`, `id` - no `pinned` property.
+### Chrome
 
-**Safari**: Also doesn't expose `pinned` directly. Some workarounds using System Events exist but are hacky.
+Chrome doesn't expose pinned status via AppleScript. Instead, we parse Chrome's SNSS session files:
 
-**Chrome session files**: Pinned tab data IS stored in Chrome's SNSS session files:
-- Location: `~/Library/Application Support/Google/Chrome/Default/Sessions/`
-- Files: `Session_<timestamp>` and `Tabs_<timestamp>`
-- Format: Proprietary binary "SNSS" format (magic number + version + pickle-serialized records)
+- **Location**: `~/Library/Application Support/Google/Chrome/<Profile>/Sessions/`
+- **Files**: `Session_<timestamp>` (most recent session file)
+- **Format**: Binary "SNSS" format with command records
 
-**SNSS Format Details**:
-- File signature "SNSS" followed by 32-bit version (always 1), little-endian
-- Records: 16-bit size, 8-bit type ID, SessionCommand contents
-- Contains: window size, pinned tabs, page transition types, etc.
+**SNSS Format**:
+- Header: "SNSS" magic (4 bytes) + version uint32 (always 1), little-endian
+- Records: uint16 size, uint8 command_id, payload bytes
 
-**Existing parsers**:
-- https://github.com/cclgroupltd/ccl-ssns - Uses only Python standard library (`struct`, `io`, `datetime`, `enum`, `typing`, `csv`, `binascii`). Could be bundled with app and run via subprocess (like we do with osascript).
-- https://github.com/deactivated/python-snss - Requires external `construct` library (not viable for subprocess approach)
-- https://github.com/instance01/chromium-snss-parse - Single-header C++ library
-- Chromagnon project (outdated)
+**Relevant commands**:
+- `kCommandSetTabWindow = 0` - Associates tab with window (tab_id + window_id)
+- `kCommandSetPinnedState = 12` - Pinned status (tab_id + bool)
 
-**Note**: Chrome's "pickle" is NOT Python's pickle. It's a separate binary serialization format Chrome developed for fast IPC. The Python parsers reverse-engineered Chrome's format.
-
-**Relevant command IDs** (from `components/sessions/core/session_service_commands.cc`):
-- `kCommandSetTabWindow = 0` - Associates tab with window
-- `kCommandSetTabIndexInWindow = 2` - Tab position in window
-- `kCommandUpdateTabNavigation = 6` - Tab URL/title (uses pickle format)
-- `kCommandSetPinnedState = 12` - Pinned status
-
-**PinnedStatePayload structure** (command ID 12):
-```cpp
-struct PinnedStatePayload {
-  SessionID::id_type tab_id;  // int32, little-endian
-  bool pinned_state;          // 1 byte
-};
+**PinnedStatePayload** (command 12):
+```
+int32 tab_id     // little-endian
+bool  pinned     // 1 byte
 ```
 
-**Implementation approach** (Native Swift):
-1. Read SNSS header: "SNSS" magic (4 bytes) + version uint32 (always 1)
-2. Loop through records: uint16 size, uint8 command_id, payload bytes
-3. For command 12: read int32 tab_id + bool pinned → build `[tab_id: isPinned]` map
-4. For command 6: parse pickle to get tab_id → URL/title mapping
-5. Correlate: match tab URLs from SNSS with tabs from AppleScript
+The parser reads the final pinned state for each tab, groups by window, and returns the count of pinned tabs per window.
 
-**Complexity assessment**: The SNSS record format is simple. Command 12 (pinned state) is trivial - just 5 bytes. The harder part is command 6 (tab navigation) which uses Chrome's pickle format for URL/title strings. Pickle parsing requires handling length-prefixed strings with 4-byte alignment.
+### Safari
 
-**References**:
-- https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/sessions/core/session_service_commands.cc - Authoritative command IDs
-- https://github.com/JRBANCEL/Chromagnon/wiki/Reverse-Engineering-SSNS-Format - Format documentation
-- https://digitalinvestigation.wordpress.com/2012/09/03/chrome-session-and-tabs-files-and-the-puzzle-of-the-pickle/
+Safari doesn't expose pinned status via AppleScript either. We use System Events UI scripting:
+
+```applescript
+tell application "System Events"
+    tell process "Safari"
+        tell group "tab bar" of window 1
+            count of (radio buttons whose description is "pinned tab")
+        end tell
+    end tell
+end tell
+```
+
+Pinned tabs have `description is "pinned tab"` while regular tabs have `description is "tab"`.
+
+### UI Indicator
+
+Pinned tabs display a pin icon (📌 rotated 45°) instead of the active dot:
+- **Pinned + Active**: Pin icon in accent color (blue)
+- **Pinned + Inactive**: Pin icon in secondary color (gray)
+- **Unpinned + Active**: Blue dot (unchanged)
+
+### Select All Behavior
+
+When there are pinned tabs, the Select All checkbox cycles through three states:
+
+**None → All Unpinned → All → None**
+
+The behavior is monotonically increasing (only adds selections) until reset:
+
+| Current State | Action |
+|--------------|--------|
+| All tabs selected | Deselect all |
+| Any pinned tab selected | Select all tabs |
+| All unpinned tabs selected | Select all tabs |
+| Otherwise | Add all unpinned to selection |
+
+This allows quickly selecting just the unpinned tabs (typically the ones you want to copy) without including pinned tabs (usually constant bookmarks).
+
+### Data Model
+
+```swift
+struct WindowInfo {
+    let index: Int
+    let name: String?
+    let tabs: [TabInfo]
+    let pinnedTabCount: Int  // Number of pinned tabs at start of tabs array
+
+    var pinnedTabs: [TabInfo] { Array(tabs.prefix(pinnedTabCount)) }
+    var unpinnedTabs: [TabInfo] { Array(tabs.dropFirst(pinnedTabCount)) }
+}
+```
+
+### JSON Output
+
+The `--format json` output includes pinned tab counts:
+
+```json
+{
+  "browser": "safari",
+  "windows": [
+    {
+      "index": 1,
+      "pinnedTabCount": 2,
+      "tabs": [
+        {"index": 1, "title": "Pinned Tab 1", "url": "...", "active": false},
+        {"index": 2, "title": "Pinned Tab 2", "url": "...", "active": false},
+        {"index": 3, "title": "Regular Tab", "url": "...", "active": true}
+      ]
+    }
+  ]
+}
+```
