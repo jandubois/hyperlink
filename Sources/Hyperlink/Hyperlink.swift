@@ -326,7 +326,8 @@ struct Hyperlink: ParsableCommand {
                                     url: tab.url.absoluteString,
                                     active: tab.isActive
                                 )
-                            }
+                            },
+                            pinnedTabCount: window.pinnedTabCount
                         )
                     }
                 )
@@ -373,6 +374,7 @@ struct AllTabsJSON: Encodable {
     struct WindowJSON: Encodable {
         let index: Int
         let tabs: [TabJSON]
+        let pinnedTabCount: Int
     }
 
     struct TabJSON: Encodable {

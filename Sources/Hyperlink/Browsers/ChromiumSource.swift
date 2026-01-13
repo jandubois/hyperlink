@@ -41,6 +41,21 @@ struct ChromiumSource: LinkSource {
             throw LinkSourceError.browserNotRunning(name)
         }
 
+        // Load pinned counts from all profiles
+        // Note: For accurate per-profile counts, use instancesSync() instead
+        // This simplified approach assigns total pinned count to window 1
+        var pinnedCounts: [Int: Int] = [:]
+        if let browserPath = browserDataPath {
+            var totalPinned = 0
+            let profileDirs = findProfileDirectories(in: browserPath)
+            for profileDir in profileDirs {
+                totalPinned += loadPinnedCount(forProfileDir: profileDir)
+            }
+            if totalPinned > 0 {
+                pinnedCounts[1] = totalPinned
+            }
+        }
+
         // Chromium browsers use similar AppleScript but with different terminology
         // Chrome uses "active tab" instead of "current tab"
         let script = """
@@ -103,10 +118,10 @@ struct ChromiumSource: LinkSource {
             """
 
         let result = try AppleScriptRunner.run(script)
-        return try parseJSON(result)
+        return try parseJSON(result, pinnedCounts: pinnedCounts)
     }
 
-    private func parseJSON(_ jsonString: String) throws -> [WindowInfo] {
+    private func parseJSON(_ jsonString: String, pinnedCounts: [Int: Int]) throws -> [WindowInfo] {
         guard let data = jsonString.data(using: .utf8) else {
             throw LinkSourceError.scriptError("Invalid JSON encoding")
         }
@@ -136,8 +151,45 @@ struct ChromiumSource: LinkSource {
                     isActive: tab.active
                 )
             }
-            return WindowInfo(index: window.windowIndex, name: nil, tabs: tabs)
+            let pinnedCount = pinnedCounts[window.windowIndex] ?? 0
+            return WindowInfo(index: window.windowIndex, name: nil, tabs: tabs, pinnedTabCount: pinnedCount)
         }
+    }
+
+    /// Load pinned tab count for a specific profile directory
+    private func loadPinnedCount(forProfileDir profileDir: String) -> Int {
+        guard let pinnedCounts = SNSSParser.parsePinnedTabs(profilePath: profileDir) else {
+            return 0
+        }
+        // Sum all pinned tabs (simplified - assumes single window per profile)
+        return pinnedCounts.values.reduce(0, +)
+    }
+
+    /// Get the browser's data directory path
+    private var browserDataPath: String? {
+        switch browser {
+        case .chrome:
+            return NSHomeDirectory() + "/Library/Application Support/Google/Chrome"
+        case .edge:
+            return NSHomeDirectory() + "/Library/Application Support/Microsoft Edge"
+        case .brave:
+            return NSHomeDirectory() + "/Library/Application Support/BraveSoftware/Brave-Browser"
+        case .arc:
+            return NSHomeDirectory() + "/Library/Application Support/Arc"
+        default:
+            return nil
+        }
+    }
+
+    /// Find all profile directories (Default, Profile 1, Profile 2, etc.)
+    private func findProfileDirectories(in browserPath: String) -> [String] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: browserPath) else {
+            return []
+        }
+
+        return contents
+            .filter { $0 == "Default" || $0.hasPrefix("Profile ") }
+            .map { (browserPath as NSString).appendingPathComponent($0) }
     }
 
     /// Fetch windows grouped by profile
@@ -148,25 +200,66 @@ struct ChromiumSource: LinkSource {
         }
 
         // Get window titles from System Events to extract profile names
-        let profileNames = getWindowProfiles()
+        let (profileNames, profileMapping) = getWindowProfilesWithMapping()
 
         // If we couldn't get profile info or there's only one profile, return single instance
         let uniqueProfiles = Set(profileNames.values.map { $0 ?? "" })
         if profileNames.isEmpty || uniqueProfiles.count <= 1 {
-            return [BrowserInstance(source: self, profileName: nil, windows: windows)]
+            // Single profile - apply pinned count to first window
+            let pinnedCount = loadPinnedCountForDefaultProfile()
+            let windowsWithPinned = applyPinnedCount(pinnedCount, toFirstWindowOf: windows)
+            return [BrowserInstance(source: self, profileName: nil, windows: windowsWithPinned)]
         }
 
-        // Group windows by profile
+        // Group windows by profile and apply pinned counts
         var windowsByProfile: [String?: [WindowInfo]] = [:]
         for window in windows {
             let profile = profileNames[window.index] ?? nil  // Flatten String?? to String?
             windowsByProfile[profile, default: []].append(window)
         }
 
-        // Create instances for each profile
+        // Create instances for each profile with pinned counts
         return windowsByProfile.map { profile, profileWindows in
-            BrowserInstance(source: self, profileName: profile, windows: profileWindows)
+            // Look up profile directory and load pinned count
+            let pinnedCount: Int
+            if let profileName = profile,
+               let profileDir = profileMapping.nameToDir[profileName],
+               let browserPath = browserDataPath {
+                let profilePath = (browserPath as NSString).appendingPathComponent(profileDir)
+                pinnedCount = loadPinnedCount(forProfileDir: profilePath)
+            } else if profile == nil, let browserPath = browserDataPath {
+                // Default profile
+                let profilePath = (browserPath as NSString).appendingPathComponent("Default")
+                pinnedCount = loadPinnedCount(forProfileDir: profilePath)
+            } else {
+                pinnedCount = 0
+            }
+
+            let windowsWithPinned = applyPinnedCount(pinnedCount, toFirstWindowOf: profileWindows)
+            return BrowserInstance(source: self, profileName: profile, windows: windowsWithPinned)
         }.sorted { ($0.profileName ?? "") < ($1.profileName ?? "") }
+    }
+
+    /// Apply pinned count to the first window (pinned tabs are always in the first/main window)
+    private func applyPinnedCount(_ count: Int, toFirstWindowOf windows: [WindowInfo]) -> [WindowInfo] {
+        guard count > 0, !windows.isEmpty else { return windows }
+
+        var result = windows
+        let firstWindow = result[0]
+        result[0] = WindowInfo(
+            index: firstWindow.index,
+            name: firstWindow.name,
+            tabs: firstWindow.tabs,
+            pinnedTabCount: count
+        )
+        return result
+    }
+
+    /// Load pinned count for default profile
+    private func loadPinnedCountForDefaultProfile() -> Int {
+        guard let browserPath = browserDataPath else { return 0 }
+        let profilePath = (browserPath as NSString).appendingPathComponent("Default")
+        return loadPinnedCount(forProfileDir: profilePath)
     }
 
     /// Override instances() to use profile detection
@@ -175,8 +268,16 @@ struct ChromiumSource: LinkSource {
     }
 
     /// Get profile names for each window by parsing System Events window titles
+    /// Returns a tuple of (window index -> profile name, profile mapping)
+    private func getWindowProfilesWithMapping() -> ([Int: String?], ProfileMapping) {
+        let mapping = loadProfileNameMapping()
+        let profiles = getWindowProfiles(using: mapping)
+        return (profiles, mapping)
+    }
+
+    /// Get profile names for each window by parsing System Events window titles
     /// Returns a dictionary mapping window index to profile name (nil for default profile)
-    private func getWindowProfiles() -> [Int: String?] {
+    private func getWindowProfiles(using mapping: ProfileMapping) -> [Int: String?] {
         // Use System Events to get window titles which include profile names
         // Format: "Tab Title - Browser Name" (default) or "Tab Title - Browser Name - Profile Name"
         let script = """
@@ -196,16 +297,13 @@ struct ChromiumSource: LinkSource {
             return [:]
         }
 
-        // Load profile name mappings from Local State file
-        let profileMapping = loadProfileNameMapping()
-
         // Parse the AppleScript list result
         // Result looks like: "Title1 - Chrome, Title2 - Chrome - Profile"
         var profiles: [Int: String?] = [:]
         let windowNames = parseAppleScriptList(result)
 
         for (index, windowName) in windowNames.enumerated() {
-            let profile = extractProfileName(from: windowName, using: profileMapping)
+            let profile = extractProfileName(from: windowName, using: mapping)
             profiles[index + 1] = profile  // Window indices are 1-based
         }
 
@@ -216,6 +314,7 @@ struct ChromiumSource: LinkSource {
     private struct ProfileMapping {
         let defaultProfileName: String?  // Name of the "Default" profile, to return nil for it
         let personToName: [String: String]  // "Person 1" -> actual profile name
+        let nameToDir: [String: String]  // profile display name -> directory name ("Default", "Profile 1", etc.)
     }
 
     /// Load profile name mappings from Chrome's Local State JSON file
@@ -232,24 +331,29 @@ struct ChromiumSource: LinkSource {
         case .arc:
             localStatePath = NSHomeDirectory() + "/Library/Application Support/Arc/Local State"
         default:
-            return ProfileMapping(defaultProfileName: nil, personToName: [:])
+            return ProfileMapping(defaultProfileName: nil, personToName: [:], nameToDir: [:])
         }
 
         guard let data = FileManager.default.contents(atPath: localStatePath),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let profile = json["profile"] as? [String: Any],
               let infoCache = profile["info_cache"] as? [String: Any] else {
-            return ProfileMapping(defaultProfileName: nil, personToName: [:])
+            return ProfileMapping(defaultProfileName: nil, personToName: [:], nameToDir: [:])
         }
 
         var defaultProfileName: String?
         var personToName: [String: String] = [:]
+        var nameToDir: [String: String] = [:]
 
         for (profileDir, profileInfo) in infoCache {
             guard let info = profileInfo as? [String: Any],
                   let name = info["name"] as? String else {
                 continue
             }
+
+            // Extract the actual profile name (from parentheses if present)
+            let extractedName = extractProfileNameFromFormat(name)
+            nameToDir[extractedName] = profileDir
 
             if profileDir == "Default" {
                 // Store the default profile's display name so we can return nil for it
@@ -261,7 +365,7 @@ struct ChromiumSource: LinkSource {
             }
         }
 
-        return ProfileMapping(defaultProfileName: defaultProfileName, personToName: personToName)
+        return ProfileMapping(defaultProfileName: defaultProfileName, personToName: personToName, nameToDir: nameToDir)
     }
 
     /// Parse an AppleScript list result into an array of strings

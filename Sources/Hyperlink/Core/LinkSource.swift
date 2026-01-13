@@ -17,10 +17,28 @@ struct WindowInfo: Sendable, Codable {
     let index: Int
     let name: String?
     let tabs: [TabInfo]
+    let pinnedTabCount: Int
+
+    init(index: Int, name: String?, tabs: [TabInfo], pinnedTabCount: Int = 0) {
+        self.index = index
+        self.name = name
+        self.tabs = tabs
+        self.pinnedTabCount = pinnedTabCount
+    }
 
     /// The currently active tab in this window, if any
     var activeTab: TabInfo? {
         tabs.first { $0.isActive }
+    }
+
+    /// Tabs that are pinned (first pinnedTabCount tabs)
+    var pinnedTabs: [TabInfo] {
+        Array(tabs.prefix(pinnedTabCount))
+    }
+
+    /// Tabs that are not pinned
+    var unpinnedTabs: [TabInfo] {
+        Array(tabs.dropFirst(pinnedTabCount))
     }
 }
 
