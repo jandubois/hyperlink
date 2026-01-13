@@ -684,3 +684,57 @@ Sources/
 - Sync preferences via iCloud
 - URL shortening integration
 - Import/export transformation rules
+
+### Pinned Tab Detection (Research Notes)
+
+**Problem**: Neither Chrome nor Safari expose pinned tab status via AppleScript.
+
+**Chrome AppleScript properties available**: `URL`, `name`, `loading`, `class`, `id` - no `pinned` property.
+
+**Safari**: Also doesn't expose `pinned` directly. Some workarounds using System Events exist but are hacky.
+
+**Chrome session files**: Pinned tab data IS stored in Chrome's SNSS session files:
+- Location: `~/Library/Application Support/Google/Chrome/Default/Sessions/`
+- Files: `Session_<timestamp>` and `Tabs_<timestamp>`
+- Format: Proprietary binary "SNSS" format (magic number + version + pickle-serialized records)
+
+**SNSS Format Details**:
+- File signature "SNSS" followed by 32-bit version (always 1), little-endian
+- Records: 16-bit size, 8-bit type ID, SessionCommand contents
+- Contains: window size, pinned tabs, page transition types, etc.
+
+**Existing parsers**:
+- https://github.com/cclgroupltd/ccl-ssns - Uses only Python standard library (`struct`, `io`, `datetime`, `enum`, `typing`, `csv`, `binascii`). Could be bundled with app and run via subprocess (like we do with osascript).
+- https://github.com/deactivated/python-snss - Requires external `construct` library (not viable for subprocess approach)
+- https://github.com/instance01/chromium-snss-parse - Single-header C++ library
+- Chromagnon project (outdated)
+
+**Note**: Chrome's "pickle" is NOT Python's pickle. It's a separate binary serialization format Chrome developed for fast IPC. The Python parsers reverse-engineered Chrome's format.
+
+**Relevant command IDs** (from `components/sessions/core/session_service_commands.cc`):
+- `kCommandSetTabWindow = 0` - Associates tab with window
+- `kCommandSetTabIndexInWindow = 2` - Tab position in window
+- `kCommandUpdateTabNavigation = 6` - Tab URL/title (uses pickle format)
+- `kCommandSetPinnedState = 12` - Pinned status
+
+**PinnedStatePayload structure** (command ID 12):
+```cpp
+struct PinnedStatePayload {
+  SessionID::id_type tab_id;  // int32, little-endian
+  bool pinned_state;          // 1 byte
+};
+```
+
+**Implementation approach** (Native Swift):
+1. Read SNSS header: "SNSS" magic (4 bytes) + version uint32 (always 1)
+2. Loop through records: uint16 size, uint8 command_id, payload bytes
+3. For command 12: read int32 tab_id + bool pinned → build `[tab_id: isPinned]` map
+4. For command 6: parse pickle to get tab_id → URL/title mapping
+5. Correlate: match tab URLs from SNSS with tabs from AppleScript
+
+**Complexity assessment**: The SNSS record format is simple. Command 12 (pinned state) is trivial - just 5 bytes. The harder part is command 6 (tab navigation) which uses Chrome's pickle format for URL/title strings. Pickle parsing requires handling length-prefixed strings with 4-byte alignment.
+
+**References**:
+- https://chromium.googlesource.com/chromium/src/+/refs/heads/main/components/sessions/core/session_service_commands.cc - Authoritative command IDs
+- https://github.com/JRBANCEL/Chromagnon/wiki/Reverse-Engineering-SSNS-Format - Format documentation
+- https://digitalinvestigation.wordpress.com/2012/09/03/chrome-session-and-tabs-files-and-the-puzzle-of-the-pickle/
