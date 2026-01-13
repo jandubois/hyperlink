@@ -457,7 +457,7 @@ struct TabRowView: View {
             if isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(tab.isActive ? .accentColor : .secondary)
                     .rotationEffect(.degrees(45))
                     .frame(width: 10)
             } else if tab.isActive {
