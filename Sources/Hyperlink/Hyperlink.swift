@@ -19,7 +19,7 @@ struct Hyperlink: ParsableCommand {
         version: "0.1.0"
     )
 
-    @Option(name: .long, help: "Browser to query: safari, chrome, arc, brave, edge, orion (default: frontmost)")
+    @Option(name: .long, help: "Browser to query: safari, chrome, arc, brave, edge, orion, frontmost (default: frontmost)")
     var browser: String?
 
     @Option(name: .long, help: "Tab to get: 1-based index, 'active', or 'all' (default: active)")
@@ -187,12 +187,13 @@ struct Hyperlink: ParsableCommand {
             }
         } else {
             // Use real browser
-            if let browserName = browser {
+            if let browserName = browser, browserName.lowercased() != "frontmost" {
                 guard let s = BrowserRegistry.source(forCLIName: browserName) else {
                     throw ExitCode(4) // Browser not found
                 }
                 source = s
             } else {
+                // No browser specified or "frontmost" - use frontmost browser
                 guard let s = BrowserRegistry.frontmostSource() else {
                     fputs("Error: No browser is running\n", stderr)
                     throw ExitCode(4)
