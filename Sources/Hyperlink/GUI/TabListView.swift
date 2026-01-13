@@ -208,6 +208,7 @@ struct TabListView: View {
             index: index,
             isHighlighted: highlightedIndex == index,
             isChecked: isTabSelected(tab),
+            isPinned: isTabPinned(tab),
             onToggleCheck: { toggleSelection(tab) },
             onSelect: { onSelect(tab) },
             onExtract: { onExtract?(tab, index) },
@@ -339,6 +340,16 @@ struct TabListView: View {
             }
         }
     }
+
+    /// Check if a tab is pinned (first N tabs in its window where N = pinnedTabCount)
+    private func isTabPinned(_ tab: TabInfo) -> Bool {
+        for window in windows {
+            if let tabPosition = window.tabs.firstIndex(where: { $0.index == tab.index && $0.url == tab.url }) {
+                return tabPosition < window.pinnedTabCount
+            }
+        }
+        return false
+    }
 }
 
 /// Group header row with disclosure triangle and selection checkbox
@@ -413,6 +424,7 @@ struct TabRowView: View {
     let index: Int
     let isHighlighted: Bool
     let isChecked: Bool
+    var isPinned: Bool = false
     let onToggleCheck: () -> Void
     let onSelect: () -> Void
     var onExtract: (() -> Void)? = nil
@@ -441,14 +453,22 @@ struct TabRowView: View {
                     .frame(width: 16)
             }
 
-            // Active indicator
-            if tab.isActive {
+            // Pinned indicator
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .rotationEffect(.degrees(45))
+                    .frame(width: 10)
+            } else if tab.isActive {
+                // Active indicator (only shown for non-pinned tabs)
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 6, height: 6)
+                    .padding(.horizontal, 2)
             } else {
                 Spacer()
-                    .frame(width: 6)
+                    .frame(width: 10)
             }
 
             // Favicon
