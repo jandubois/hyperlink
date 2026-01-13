@@ -1022,11 +1022,57 @@ class PickerViewModel: ObservableObject {
         return count > 0 && count < filteredTabs.count
     }
 
+    // MARK: - Pinned Tab Helpers
+
+    /// Check if a tab is pinned based on its position in its window
+    private func isTabPinned(_ tab: TabInfo) -> Bool {
+        for window in currentWindows {
+            if let tabPosition = window.tabs.firstIndex(where: { $0.index == tab.index && $0.url == tab.url }) {
+                return tabPosition < window.pinnedTabCount
+            }
+        }
+        return false
+    }
+
+    /// Returns filtered tabs that are not pinned
+    var filteredUnpinnedTabs: [TabInfo] {
+        filteredTabs.filter { !isTabPinned($0) }
+    }
+
+    /// Returns filtered tabs that are pinned
+    var filteredPinnedTabs: [TabInfo] {
+        filteredTabs.filter { isTabPinned($0) }
+    }
+
+    /// Returns true if there are any pinned tabs in the current view
+    var hasPinnedTabs: Bool {
+        currentWindows.contains { $0.pinnedTabCount > 0 }
+    }
+
+    /// Returns true if all unpinned tabs are selected
+    var allUnpinnedTabsSelected: Bool {
+        let unpinned = filteredUnpinnedTabs
+        guard !unpinned.isEmpty else { return true }
+        return unpinned.allSatisfy { selectedTabs.contains(tabIdentifier(for: $0)) }
+    }
+
     /// Select all currently visible (filtered) tabs
     func selectAllFilteredTabs() {
         for tab in filteredTabs {
             let identifier = tabIdentifier(for: tab)
             selectedTabs.insert(identifier)
+        }
+    }
+
+    /// Select only unpinned tabs (deselects pinned ones)
+    func selectAllUnpinnedTabs() {
+        for tab in filteredTabs {
+            let identifier = tabIdentifier(for: tab)
+            if isTabPinned(tab) {
+                selectedTabs.remove(identifier)
+            } else {
+                selectedTabs.insert(identifier)
+            }
         }
     }
 
@@ -1038,12 +1084,18 @@ class PickerViewModel: ObservableObject {
         }
     }
 
-    /// Toggle select all / deselect all
+    /// Toggle select all with pinned tab awareness
+    /// Cycle: None → All Unpinned → All → None
     func toggleSelectAll() {
         if allFilteredTabsSelected {
+            // All selected → deselect all
             deselectAllFilteredTabs()
-        } else {
+        } else if allUnpinnedTabsSelected && hasPinnedTabs {
+            // All unpinned selected (but not all pinned) → select all
             selectAllFilteredTabs()
+        } else {
+            // Otherwise → select all unpinned
+            selectAllUnpinnedTabs()
         }
     }
 
