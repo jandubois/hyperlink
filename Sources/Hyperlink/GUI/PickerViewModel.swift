@@ -557,7 +557,10 @@ class PickerViewModel: ObservableObject {
         )
     }
 
-    /// Synchronous version for use when async Tasks aren't running
+    /// Load browser tabs, showing the frontmost browser immediately
+    ///
+    /// Loads browsers one at a time (frontmost first) until tabs are available,
+    /// then shows them and loads remaining browsers in the background.
     func loadBrowsersSync() {
         isLoading = true
         errorMessage = nil
@@ -590,12 +593,14 @@ class PickerViewModel: ObservableObject {
             return
         }
 
+        // Phase 1: Load browsers until we have tabs to display
         var browserDataList: [BrowserData] = []
         var lastError: Error?
+        var loadedCount = 0
 
         for browser in runningBrowsers {
+            loadedCount += 1
             do {
-                // Use instancesSync to get profile-aware browser instances
                 let instances = try BrowserRegistry.instancesSync(for: browser)
                 for instance in instances {
                     if !instance.windows.isEmpty {
@@ -616,6 +621,10 @@ class PickerViewModel: ObservableObject {
                 lastError = error
             } catch {
                 lastError = error
+            }
+
+            if !browserDataList.isEmpty {
+                break
             }
         }
 
@@ -640,6 +649,45 @@ class PickerViewModel: ObservableObject {
         }
 
         isLoading = false
+
+        // Phase 2: Load remaining browsers in the background
+        let remaining = Array(runningBrowsers.dropFirst(loadedCount))
+        if !remaining.isEmpty {
+            loadRemainingBrowsersInBackground(remaining)
+        }
+    }
+
+    /// Load additional browsers off the main thread and append results as they arrive
+    private func loadRemainingBrowsersInBackground(_ remaining: [BrowserDetector.KnownBrowser]) {
+        for browser in remaining {
+            Task.detached {
+                var newBrowserData: [BrowserData] = []
+                do {
+                    let instances = try BrowserRegistry.instancesSync(for: browser)
+                    for instance in instances {
+                        if !instance.windows.isEmpty {
+                            newBrowserData.append(BrowserData(
+                                name: instance.displayName,
+                                icon: instance.icon,
+                                windows: instance.windows
+                            ))
+                        }
+                    }
+                } catch {
+                    // Non-critical: frontmost browser already loaded
+                }
+
+                let data = newBrowserData
+                if !data.isEmpty {
+                    await self.appendBrowserData(data)
+                }
+            }
+        }
+    }
+
+    /// Append browser data from background loading
+    private func appendBrowserData(_ data: [BrowserData]) {
+        browsers.append(contentsOf: data)
     }
 
     /// Load browser data from mock data store
