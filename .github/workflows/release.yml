@@ -40,3 +40,12 @@ jobs:
         with:
           body: ${{ steps.tag_message.outputs.MESSAGE }}
           files: dist/hyperlink-macos-arm64.zip
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          jq -n --arg v "$VERSION" \
+            '{event_type: "update-formula", client_payload: {formula: "hyperlink", version: $v}}' |
+            gh api repos/jandubois/homebrew-tap/dispatches --input -
