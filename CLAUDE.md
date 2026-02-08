@@ -9,10 +9,10 @@ Hyperlink is a macOS utility for extracting hyperlinks from browser tabs. It has
 ## Build & Test Commands
 
 ```bash
-# Build
-swift build
+# Build (generates Version.swift from git tags)
+make build
 
-# Run unit tests (21 tests)
+# Run unit tests
 swift test
 
 # Run all tests (unit + integration)

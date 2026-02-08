@@ -16,7 +16,7 @@ struct Hyperlink: ParsableCommand {
 
             When run without arguments, opens a GUI picker. Use flags for CLI mode.
             """,
-        version: "0.1.0"
+        version: appVersion
     )
 
     @Option(name: .long, help: "Browser to query: safari, chrome, arc, brave, edge, orion, frontmost (default: frontmost)")

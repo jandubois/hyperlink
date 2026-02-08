@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build for arm64
+        run: make release
+
+      - name: Prepare binary
+        run: |
+          mkdir -p dist
+          cp .build/release/hyperlink dist/
+          cd dist && zip hyperlink-macos-arm64.zip hyperlink
+
+      - name: Get tag annotation
+        id: tag_message
+        run: |
+          # Extract just the tag message (after the blank line in tag object)
+          TAG_MESSAGE=$(git cat-file tag ${{ github.ref_name }} | sed '1,/^$/d')
+          echo "MESSAGE<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.tag_message.outputs.MESSAGE }}
+          files: dist/hyperlink-macos-arm64.zip
