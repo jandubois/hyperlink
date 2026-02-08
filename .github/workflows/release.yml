@@ -25,6 +25,7 @@ jobs:
           mkdir -p dist
           cp .build/release/hyperlink dist/
           cd dist && zip hyperlink-macos-arm64.zip hyperlink
+          shasum --algorithm 256 hyperlink-macos-arm64.zip > hyperlink-macos-arm64.zip.sha256
 
       - name: Get tag annotation
         id: tag_message
@@ -39,7 +40,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.tag_message.outputs.MESSAGE }}
-          files: dist/hyperlink-macos-arm64.zip
+          files: |
+            dist/hyperlink-macos-arm64.zip
+            dist/hyperlink-macos-arm64.zip.sha256
 
       - name: Update Homebrew tap
         env:
