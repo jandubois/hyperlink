@@ -20,8 +20,8 @@ Requires Swift 5.9+ and macOS 14+.
 ```bash
 git clone https://github.com/yourusername/hyperlink.git
 cd hyperlink
-swift build -c release
-cp .build/release/Hyperlink /usr/local/bin/hyperlink
+make release
+cp .build/release/hyperlink /usr/local/bin/hyperlink
 ```
 
 ### Permissions
@@ -112,14 +112,14 @@ Preferences are stored in `~/Library/Preferences/hyperlink.plist`:
 ### Building
 
 ```bash
-swift build
+make build
 ```
 
 ### Testing
 
 ```bash
 # Unit tests
-swift test
+make test
 
 # Integration tests (uses mock data, no browser required)
 ./scripts/integration-test.sh
