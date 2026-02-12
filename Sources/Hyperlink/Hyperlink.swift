@@ -84,6 +84,10 @@ struct Hyperlink: ParsableCommand {
             return
         }
 
+        if pasteMode {
+            BrowserDetector.captureFrontmostBrowser()
+        }
+
         try runCLI()
     }
 

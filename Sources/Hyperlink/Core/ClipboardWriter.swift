@@ -135,7 +135,12 @@ enum ClipboardWriter {
     }
 
     private static func htmlToRTF(_ html: String) -> Data? {
-        // Use textutil to convert HTML to RTF, matching the AppleScript approach
+        // Append a word joiner (U+2060) outside the link so the RTF ends
+        // with default formatting. Without this, the link's blue/underline
+        // style bleeds into text typed after pasting. U+200B (zero-width
+        // space) gets stripped by textutil; U+2060 survives.
+        let terminated = html + "\u{2060}"
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
         process.arguments = [
@@ -154,7 +159,7 @@ enum ClipboardWriter {
 
         do {
             try process.run()
-            inputPipe.fileHandleForWriting.write(Data(html.utf8))
+            inputPipe.fileHandleForWriting.write(Data(terminated.utf8))
             inputPipe.fileHandleForWriting.closeFile()
             process.waitUntilExit()
 

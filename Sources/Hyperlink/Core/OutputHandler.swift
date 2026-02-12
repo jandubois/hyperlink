@@ -42,16 +42,37 @@ enum OutputHandler {
             targetApp = app
         }
 
-        // Activate the target app
-        guard targetApp.activate(options: .activateAllWindows) else {
-            throw OutputError.pasteFailedActivation
+        // In GUI mode NSApplication is already running — activate and paste
+        // directly. In CLI mode we need a brief headless NSApplication to
+        // give CGEvent and activate a window server connection.
+        let guiRunning = MainActor.assumeIsolated { NSApp?.isRunning == true }
+        if guiRunning {
+            activateAndPaste(targetApp)
+        } else {
+            activateAndPasteWithApp(targetApp)
         }
+    }
 
-        // Brief delay to ensure app is ready to receive input
+    /// Activate target and send paste keystroke (GUI mode, NSApp running)
+    private static func activateAndPaste(_ target: NSRunningApplication) {
+        target.activate(options: .activateAllWindows)
         Thread.sleep(forTimeInterval: 0.1)
-
-        // Send Cmd+V keystroke
         sendPasteKeystroke()
+    }
+
+    /// Start a headless NSApplication, activate target, paste, terminate
+    private static func activateAndPasteWithApp(_ target: NSRunningApplication) {
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.prohibited)
+
+            DispatchQueue.main.async {
+                activateAndPaste(target)
+                app.terminate(nil)
+            }
+
+            app.run()
+        }
     }
 
     /// Find a running app by name or bundle ID
