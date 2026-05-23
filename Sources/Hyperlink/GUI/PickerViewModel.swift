@@ -438,29 +438,39 @@ class PickerViewModel: ObservableObject {
         items.append(.groupHeader(group: group, indentLevel: indentLevel))
 
         if !isGroupCollapsed(group.id) {
-            // Merge tabs and subgroups, sort by full path
             enum ChildItem {
                 case tab(TabInfo)
                 case subgroup(LinkGroup)
-
-                var sortKey: String {
-                    switch self {
-                    case .tab(let tab):
-                        // Use host + path for sorting
-                        let host = tab.url.host ?? ""
-                        let path = tab.url.path
-                        return "\(host)\(path)".lowercased()
-                    case .subgroup(let group):
-                        return group.displayName.lowercased()
-                    }
-                }
             }
 
             var children: [ChildItem] = []
             children.append(contentsOf: group.tabs.map { .tab($0) })
             children.append(contentsOf: group.subgroups.map { .subgroup($0) })
 
-            children.sort { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
+            // .original preserves group.tabs order (already in filteredTabs order).
+            // Subgroups use displayName regardless of sortOrder, since they
+            // represent a path-prefix bucket and have no title of their own.
+            if sortOrder != .original {
+                func sortKey(for child: ChildItem) -> String {
+                    switch child {
+                    case .tab(let tab):
+                        switch sortOrder {
+                        case .byTitle:
+                            return tab.title.lowercased()
+                        case .byURL, .original:
+                            let host = tab.url.host ?? ""
+                            let path = tab.url.path
+                            return "\(host)\(path)".lowercased()
+                        }
+                    case .subgroup(let group):
+                        return group.displayName.lowercased()
+                    }
+                }
+                children.sort { a, b in
+                    let cmp = sortKey(for: a).localizedCaseInsensitiveCompare(sortKey(for: b))
+                    return sortAscending ? cmp == .orderedAscending : cmp == .orderedDescending
+                }
+            }
 
             for child in children {
                 switch child {

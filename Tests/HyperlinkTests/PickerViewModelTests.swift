@@ -130,6 +130,48 @@ struct PickerViewModelTests {
         #expect(viewModel.selectedTabs.count == 1)
     }
 
+    @Test("Within-group children re-sort when sortOrder changes")
+    @MainActor
+    func groupedSortOrderChangesChildOrder() {
+        let viewModel = PickerViewModel()
+        // 3 tabs on the same host form a single group. Titles and URL paths
+        // run in opposite orders, so byTitle and byURL produce different orderings.
+        let tabs = [
+            TabInfo(index: 1, title: "Charlie", url: URL(string: "https://github.com/a")!, isActive: false),
+            TabInfo(index: 2, title: "Bravo",   url: URL(string: "https://github.com/b")!, isActive: false),
+            TabInfo(index: 3, title: "Alpha",   url: URL(string: "https://github.com/c")!, isActive: true)
+        ]
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+        viewModel.isGroupingEnabled = true
+
+        viewModel.sortOrder = .byURL
+        let byURLTitles = viewModel.displayItems.compactMap { $0.asTab?.title }
+        #expect(byURLTitles == ["Charlie", "Bravo", "Alpha"])
+
+        viewModel.sortOrder = .byTitle
+        let byTitleTitles = viewModel.displayItems.compactMap { $0.asTab?.title }
+        #expect(byTitleTitles == ["Alpha", "Bravo", "Charlie"])
+    }
+
+    @Test("Within-group children preserve original order")
+    @MainActor
+    func groupedOriginalPreservesBrowserOrder() {
+        let viewModel = PickerViewModel()
+        // Titles run out of alphabetic order; .original must keep the browser's
+        // index order.
+        let tabs = [
+            TabInfo(index: 1, title: "Charlie", url: URL(string: "https://github.com/x")!, isActive: false),
+            TabInfo(index: 2, title: "Alpha",   url: URL(string: "https://github.com/y")!, isActive: false),
+            TabInfo(index: 3, title: "Bravo",   url: URL(string: "https://github.com/z")!, isActive: true)
+        ]
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+        viewModel.isGroupingEnabled = true
+        viewModel.sortOrder = .original
+
+        let titles = viewModel.displayItems.compactMap { $0.asTab?.title }
+        #expect(titles == ["Charlie", "Alpha", "Bravo"])
+    }
+
     @Test("currentWindows returns windows for selected browser")
     @MainActor
     func currentWindows() {
