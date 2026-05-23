@@ -394,6 +394,29 @@ struct PickerView: View {
             return true
         }
 
+        // Ctrl+o/t/u set sort order; Ctrl+s flips direction; Ctrl+g toggles grouping (always works)
+        if hasCtrl, !hasCmd {
+            switch char {
+            case "o":
+                viewModel.sortOrder = .original
+                return true
+            case "t":
+                viewModel.sortOrder = .byTitle
+                return true
+            case "u":
+                viewModel.sortOrder = .byURL
+                return true
+            case "s":
+                viewModel.sortAscending.toggle()
+                return true
+            case "g":
+                viewModel.isGroupingEnabled.toggle()
+                return true
+            default:
+                break
+            }
+        }
+
         // === Focus-dependent keys ===
 
         if viewModel.searchFieldHasFocus {

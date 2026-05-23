@@ -7,6 +7,11 @@ struct HelpOverlay: View {
     private let shortcuts: [(key: String, description: String)] = [
         ("1-9", "Select and copy tab"),
         ("Ctrl+1-9", "Select tab (always)"),
+        ("Ctrl+O", "Sort: Original"),
+        ("Ctrl+T", "Sort: By Title"),
+        ("Ctrl+U", "Sort: By URL"),
+        ("Ctrl+S", "Toggle sort direction"),
+        ("Ctrl+G", "Group by domain"),
         ("Up/Down", "Navigate tabs"),
         ("Return", "Copy highlighted tab"),
         ("Space", "Toggle checkbox"),
