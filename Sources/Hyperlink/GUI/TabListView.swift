@@ -53,6 +53,10 @@ class PreviewPanelController: ObservableObject {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(NSColor.windowBackgroundColor))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
                         .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 4)
                 )
                 .padding(16)
