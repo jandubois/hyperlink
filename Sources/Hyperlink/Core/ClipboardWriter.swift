@@ -111,7 +111,7 @@ enum ClipboardWriter {
                    "</font>"
         }
 
-        return htmlToRTF(html)
+        return htmlToRTF(html, terminateInline: format == .plain)
     }
 
     private static func createRTF(transformedTabs: [(title: String, url: String)], format: MultiSelectionFormat) -> Data? {
@@ -132,15 +132,20 @@ enum ClipboardWriter {
                    "</font>"
         }
 
-        return htmlToRTF(html)
+        return htmlToRTF(html, terminateInline: format == .plain)
     }
 
-    private static func htmlToRTF(_ html: String) -> Data? {
-        // Append a word joiner (U+2060) outside the link so the RTF ends
-        // with default formatting. Without this, the link's blue/underline
-        // style bleeds into text typed after pasting. U+200B (zero-width
-        // space) gets stripped by textutil; U+2060 survives.
-        let terminated = html + "\u{2060}"
+    private static func htmlToRTF(_ html: String, terminateInline: Bool = true) -> Data? {
+        // For inline endings (e.g. a bare <a> tag), append a word joiner
+        // (U+2060) outside the link so the RTF ends with a default-formatted
+        // character. Without this, the link's color and link attribute apply
+        // to text typed after pasting. U+200B (zero-width space) gets stripped
+        // by textutil; U+2060 survives.
+        //
+        // For block endings (e.g. </ul>), the closing block terminates link
+        // scope on its own; a trailing WJ would land in a new list item, so
+        // callers pass terminateInline: false.
+        let terminated = terminateInline ? html + "\u{2060}" : html
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")

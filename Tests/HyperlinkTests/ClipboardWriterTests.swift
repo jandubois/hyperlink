@@ -83,6 +83,24 @@ struct ClipboardWriterTests {
         }
     }
 
+    @Test("List format RTF contains exactly one bullet per tab")
+    func listFormatRTFBulletCount() {
+        let tabs = [
+            Self.makeTab(title: "Tab 1", url: "https://example.com/1"),
+            Self.makeTab(title: "Tab 2", url: "https://example.com/2")
+        ]
+
+        ClipboardWriter.write(tabs, format: .list, transform: .none)
+
+        let rtfData = NSPasteboard.general.data(forType: .rtf)
+        #expect(rtfData != nil)
+
+        if let data = rtfData, let rtfString = String(data: data, encoding: .utf8) {
+            let bulletCount = rtfString.components(separatedBy: "\\listtext").count - 1
+            #expect(bulletCount == tabs.count)
+        }
+    }
+
     @Test("Special characters in title are preserved in markdown")
     func specialCharactersMarkdown() {
         let tab = Self.makeTab(title: "Test & <script>", url: "https://example.com")
