@@ -69,7 +69,8 @@ enum ClipboardWriter {
 
     /// Write markdown and RTF to clipboard
     private static func write(markdown: String, title: String, url: URL) {
-        let html = "<font face=\"Helvetica Neue\"><a href=\"\(url.absoluteString)\">\(escapeHTML(title))</a></font>"
+        // text-decoration:none suppresses textutil's default underline on <a> tags.
+        let html = "<font face=\"Helvetica Neue\"><a href=\"\(url.absoluteString)\" style=\"text-decoration:none\">\(escapeHTML(title))</a></font>"
 
         guard let rtfData = htmlToRTF(html) else {
             // Fallback: just write plain text
@@ -95,7 +96,7 @@ enum ClipboardWriter {
     private static func createRTF(tabs: [TabInfo], format: MultiSelectionFormat, transform: TitleTransform) -> Data? {
         let links = tabs.map { tab in
             let title = escapeHTML(transform.apply(to: tab.title))
-            return "<a href=\"\(tab.url.absoluteString)\">\(title)</a>"
+            return "<a href=\"\(tab.url.absoluteString)\" style=\"text-decoration:none\">\(title)</a>"
         }
 
         let html: String
@@ -116,7 +117,7 @@ enum ClipboardWriter {
     private static func createRTF(transformedTabs: [(title: String, url: String)], format: MultiSelectionFormat) -> Data? {
         let links = transformedTabs.map { tab in
             let title = escapeHTML(tab.title)
-            return "<a href=\"\(tab.url)\">\(title)</a>"
+            return "<a href=\"\(tab.url)\" style=\"text-decoration:none\">\(title)</a>"
         }
 
         let html: String
