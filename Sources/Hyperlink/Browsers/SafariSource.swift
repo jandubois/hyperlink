@@ -127,11 +127,15 @@ struct SafariSource: LinkSource {
     }
 
     /// Count pinned tabs per window using System Events UI scripting.
-    /// Pinned tabs carry the accessibility description "pinned tab".
-    /// Unlike the tab data (read via Automation), this needs Accessibility
-    /// permission and depends on Safari's tab-bar UI structure, so it can fail
-    /// independently.
+    /// Safari's tab bar is an AXOpaqueProviderList whose accessibility
+    /// description reads "Tab bar, N tabs, M pinned tabs"; M is the pinned
+    /// count (the clause is absent when none are pinned). Unlike the tab data
+    /// (read via Automation), this needs Accessibility permission and depends
+    /// on Safari's tab-bar UI structure, so it can fail independently.
     private func loadPinnedTabCounts() -> PinnedCountResult {
+        // One tab-bar description per window, newline-separated, position
+        // matching the window index. A window with no tab bar yields an empty
+        // line rather than failing the whole query.
         let script = """
             tell application "System Events"
                 tell process "Safari"
@@ -140,11 +144,13 @@ struct SafariSource: LinkSource {
 
                     set output to ""
                     repeat with w from 1 to windowCount
-                        tell group "tab bar" of window w
-                            set pinnedCount to count of (radio buttons whose description is "pinned tab")
-                            set output to output & pinnedCount
-                        end tell
-                        if w < windowCount then set output to output & ","
+                        set lineText to ""
+                        try
+                            set tabBar to first UI element of window w whose subrole is "AXOpaqueProviderList"
+                            set lineText to description of tabBar
+                        end try
+                        set output to output & lineText
+                        if w < windowCount then set output to output & linefeed
                     end repeat
                     return output
                 end tell
@@ -164,15 +170,39 @@ struct SafariSource: LinkSource {
             return .success([:])  // No windows open
         }
 
-        // Parse comma-separated counts: "2,0,1" -> {1: 2, 2: 0, 3: 1}
+        // Parse one description line per window. If no line is a recognizable
+        // tab-bar description, the UI structure has changed; report failure
+        // rather than silently reporting zero pinned tabs.
         var counts: [Int: Int] = [:]
-        let parts = result.split(separator: ",")
-        for (index, part) in parts.enumerated() {
-            if let count = Int(part.trimmingCharacters(in: .whitespaces)) {
+        var foundTabBar = false
+        for (index, line) in result.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            if let count = Self.pinnedCount(fromTabBarDescription: String(line)) {
                 counts[index + 1] = count  // Window indices are 1-based
+                foundTabBar = true
             }
         }
+
+        guard foundTabBar else {
+            return .failed("No Safari tab bar found (UI structure may have changed)")
+        }
         return .success(counts)
+    }
+
+    /// Extract the pinned-tab count from a Safari tab-bar accessibility
+    /// description. Returns nil when the string is not a tab-bar description,
+    /// and 0 when it is one with no pinned-tab clause.
+    static func pinnedCount(fromTabBarDescription description: String) -> Int? {
+        let trimmed = description.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("Tab bar") else { return nil }
+
+        // Find the "<n> pinned tab(s)" clause among the comma-separated parts.
+        for part in trimmed.components(separatedBy: ", ") {
+            let words = part.split(separator: " ")
+            if words.count >= 2, words[1].hasPrefix("pinned"), let count = Int(words[0]) {
+                return count
+            }
+        }
+        return 0
     }
 
     private func parseJSON(_ jsonString: String) throws -> [WindowInfo] {

@@ -40,6 +40,20 @@ struct LinkSourceTests {
         #expect(instances.first?.warning == nil)
     }
 
+    @Test("Tab-bar description yields the pinned count")
+    func pinnedCountParsing() {
+        #expect(SafariSource.pinnedCount(fromTabBarDescription: "Tab bar, 2 tabs, 2 pinned tabs") == 2)
+        #expect(SafariSource.pinnedCount(fromTabBarDescription: "Tab bar, 3 tabs, 1 pinned tab") == 1)
+        // No pinned clause means zero pinned tabs.
+        #expect(SafariSource.pinnedCount(fromTabBarDescription: "Tab bar, 4 tabs") == 0)
+    }
+
+    @Test("Non-tab-bar description yields nil")
+    func pinnedCountRejectsOtherDescriptions() {
+        #expect(SafariSource.pinnedCount(fromTabBarDescription: "") == nil)
+        #expect(SafariSource.pinnedCount(fromTabBarDescription: "toolbar") == nil)
+    }
+
     @Test("Active-tab result parses index, URL, and title")
     func activeTabResultParses() {
         let tab = TabInfo(activeTabResult: "2\nhttps://example.com\nExample Title")
