@@ -26,6 +26,11 @@ struct HelpOverlay: View {
     ]
 
     var body: some View {
+        // Split the shortcuts into two columns so the overlay stays shorter
+        // than the picker window and never clips.
+        let half = (shortcuts.count + 1) / 2
+        let columns = [Array(shortcuts[..<half]), Array(shortcuts[half...])]
+
         VStack(spacing: 16) {
             HStack {
                 Text("Keyboard Shortcuts")
@@ -39,17 +44,21 @@ struct HelpOverlay: View {
                 .buttonStyle(.plain)
             }
 
-            VStack(spacing: 8) {
-                ForEach(shortcuts, id: \.key) { shortcut in
-                    HStack {
-                        Text(shortcut.key)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .frame(width: 100, alignment: .trailing)
-                            .foregroundColor(.accentColor)
-                        Text(shortcut.description)
-                            .font(.system(size: 12))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundColor(.primary)
+            HStack(alignment: .top, spacing: 24) {
+                ForEach(columns.indices, id: \.self) { column in
+                    VStack(spacing: 8) {
+                        ForEach(columns[column], id: \.key) { shortcut in
+                            HStack {
+                                Text(shortcut.key)
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                    .frame(width: 90, alignment: .trailing)
+                                    .foregroundColor(.accentColor)
+                                Text(shortcut.description)
+                                    .font(.system(size: 12))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .foregroundColor(.primary)
+                            }
+                        }
                     }
                 }
             }
@@ -59,7 +68,7 @@ struct HelpOverlay: View {
                 .foregroundColor(.secondary)
         }
         .padding(20)
-        .frame(width: 320)
+        .frame(width: 580)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
