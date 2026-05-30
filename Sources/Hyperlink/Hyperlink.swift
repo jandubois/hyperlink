@@ -294,7 +294,7 @@ struct Hyperlink: ParsableCommand {
             // stdout (default for CLI)
             switch format {
             case .markdown:
-                print("[\(result.title)](\(result.url))")
+                print("[\(result.title)](\(result.url))", terminator: "")
             case .json:
                 let output = SingleTabJSON(
                     browser: source.name.lowercased().replacingOccurrences(of: " ", with: ""),
@@ -332,10 +332,11 @@ struct Hyperlink: ParsableCommand {
             // stdout (default for CLI)
             switch format {
             case .markdown:
-                for tab in tabs {
+                let links = tabs.map { tab -> String in
                     let result = engine.apply(title: tab.title, url: tab.url)
-                    print("[\(result.title)](\(result.url))")
+                    return "[\(result.title)](\(result.url))"
                 }
+                print(links.joined(separator: "\n"), terminator: "")
             case .json:
                 let output = AllTabsJSON(
                     browser: source.name.lowercased().replacingOccurrences(of: " ", with: ""),

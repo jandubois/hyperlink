@@ -286,8 +286,8 @@ reason=\"escape\""
 
 # Test: Single-tab output for each format
 test_cli_single() {
-    run_cli_test "CLI markdown (single tab)" \
-        $'[Apple](https://www.apple.com/)\n' \
+    run_cli_test "CLI markdown (single tab, no trailing newline)" \
+        '[Apple](https://www.apple.com/)' \
         --browser safari --tab active --format markdown
     run_cli_test "CLI title (single tab, no trailing newline)" \
         'Apple' \
@@ -299,8 +299,8 @@ test_cli_single() {
 
 # Test: All-tabs output for each format
 test_cli_all() {
-    run_cli_test "CLI markdown (all tabs)" \
-        $'[Apple](https://www.apple.com/)\n[Google Search](https://www.google.com/)\n[GitHub - Code hosting](https://github.com/)\n[Stack Overflow - Developer community](https://stackoverflow.com/)\n[Hacker News](https://news.ycombinator.com/)\n' \
+    run_cli_test "CLI markdown (all tabs, newline-separated, no trailing newline)" \
+        $'[Apple](https://www.apple.com/)\n[Google Search](https://www.google.com/)\n[GitHub - Code hosting](https://github.com/)\n[Stack Overflow - Developer community](https://stackoverflow.com/)\n[Hacker News](https://news.ycombinator.com/)' \
         --browser safari --tab all --format markdown
     run_cli_test "CLI title (all tabs, newline-separated, no trailing newline)" \
         $'Apple\nGoogle Search\nGitHub - Code hosting\nStack Overflow - Developer community\nHacker News' \
