@@ -34,7 +34,7 @@ struct Hyperlink: ParsableCommand {
     @Option(name: .long, help: "App to paste to (name or bundle ID). Implies --paste.")
     var pasteApp: String?
 
-    @Option(name: .long, help: "Output format: markdown, json")
+    @Option(name: .long, help: "Output format: markdown, json, title, url")
     var format: OutputFormat = .markdown
 
     @Flag(name: .long, help: "Enable test mode: verbose logging and stdin command input")
@@ -292,6 +292,10 @@ struct Hyperlink: ParsableCommand {
                    let json = String(data: data, encoding: .utf8) {
                     print(json)
                 }
+            case .title:
+                print(result.title, terminator: "")
+            case .url:
+                print(result.url, terminator: "")
             }
         }
     }
@@ -341,6 +345,12 @@ struct Hyperlink: ParsableCommand {
                    let json = String(data: data, encoding: .utf8) {
                     print(json)
                 }
+            case .title:
+                let titles = tabs.map { engine.apply(title: $0.title, url: $0.url).title }
+                print(titles.joined(separator: "\n"), terminator: "")
+            case .url:
+                let urls = tabs.map { engine.apply(title: $0.title, url: $0.url).url }
+                print(urls.joined(separator: "\n"), terminator: "")
             }
         }
     }
@@ -351,6 +361,8 @@ struct Hyperlink: ParsableCommand {
 enum OutputFormat: String, ExpressibleByArgument, CaseIterable {
     case markdown
     case json
+    case title
+    case url
 }
 
 // MARK: - Output Mode

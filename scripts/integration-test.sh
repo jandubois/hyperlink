@@ -4,8 +4,8 @@
 #
 # Usage: ./scripts/integration-test.sh [test-name]
 #
-# Runs GUI integration tests using the --test mode with mock data.
-# Uses test-data.json for reproducible browser/tab state.
+# Runs GUI integration tests (via --test mode) and CLI stdout tests, both
+# against mock data. Uses test-data.json for reproducible browser/tab state.
 #
 
 set -e
@@ -95,6 +95,55 @@ run_gui_test() {
         echo "Full output:"
         echo "$output" | head -50
         return 1
+    fi
+}
+
+# Run the CLI in stdout mode and compare its output byte-for-byte.
+# Args: test_name, expected_stdout, cli_flags...
+# The 'x' sentinel survives command substitution (which strips trailing
+# newlines), so an exact match can assert that title/url emit none. Use
+# $'...' in expected_stdout to embed newlines.
+run_cli_test() {
+    local test_name="$1"
+    local expected="$2"
+    shift 2
+
+    local output
+    output=$(timeout "$TIMEOUT_SEC" "$BINARY" --mock-data "$MOCK_DATA" "$@" 2>/dev/null || true; printf 'x')
+    output="${output%x}"
+
+    if [ "$output" = "$expected" ]; then
+        log_pass "$test_name"
+    else
+        log_fail "$test_name"
+        echo "  expected: $(printf '%s' "$expected" | od -c)"
+        echo "  actual:   $(printf '%s' "$output" | od -c)"
+    fi
+}
+
+# Run the CLI and assert stdout contains every fixed substring.
+# Args: test_name, substrings (one per line), cli_flags...
+# JSON key order varies between runs, so match key/value pairs rather than
+# the whole document.
+run_cli_contains() {
+    local test_name="$1"
+    local patterns="$2"
+    shift 2
+
+    local output
+    output=$(timeout "$TIMEOUT_SEC" "$BINARY" --mock-data "$MOCK_DATA" "$@" 2>/dev/null || true)
+
+    local all_found=true
+    while IFS= read -r pattern; do
+        [ -z "$pattern" ] && continue
+        if ! printf '%s' "$output" | grep -qF "$pattern"; then
+            log_fail "$test_name: missing '$pattern'"
+            all_found=false
+        fi
+    done <<< "$patterns"
+
+    if $all_found; then
+        log_pass "$test_name"
     fi
 }
 
@@ -231,6 +280,47 @@ type=\"dismiss\"
 reason=\"escape\""
 }
 
+# CLI stdout tests. Expected titles and URLs assume the default global
+# transform rules, which leave this test data unchanged; JSON output ignores
+# transforms.
+
+# Test: Single-tab output for each format
+test_cli_single() {
+    run_cli_test "CLI markdown (single tab)" \
+        $'[Apple](https://www.apple.com/)\n' \
+        --browser safari --tab active --format markdown
+    run_cli_test "CLI title (single tab, no trailing newline)" \
+        'Apple' \
+        --browser safari --tab active --format title
+    run_cli_test "CLI url (single tab, no trailing newline)" \
+        'https://www.apple.com/' \
+        --browser safari --tab active --format url
+}
+
+# Test: All-tabs output for each format
+test_cli_all() {
+    run_cli_test "CLI markdown (all tabs)" \
+        $'[Apple](https://www.apple.com/)\n[Google Search](https://www.google.com/)\n[GitHub - Code hosting](https://github.com/)\n[Stack Overflow - Developer community](https://stackoverflow.com/)\n[Hacker News](https://news.ycombinator.com/)\n' \
+        --browser safari --tab all --format markdown
+    run_cli_test "CLI title (all tabs, newline-separated, no trailing newline)" \
+        $'Apple\nGoogle Search\nGitHub - Code hosting\nStack Overflow - Developer community\nHacker News' \
+        --browser safari --tab all --format title
+    run_cli_test "CLI url (all tabs, newline-separated, no trailing newline)" \
+        $'https://www.apple.com/\nhttps://www.google.com/\nhttps://github.com/\nhttps://stackoverflow.com/\nhttps://news.ycombinator.com/' \
+        --browser safari --tab all --format url
+}
+
+# Test: JSON output carries the expected key/value pairs
+test_cli_json() {
+    run_cli_contains "CLI json (single tab)" \
+        '"browser":"safari"
+"window":1
+"tab":1
+"title":"Apple"
+"url":"https:\/\/www.apple.com\/"' \
+        --browser safari --tab active --format json
+}
+
 # Run all tests or specific test
 run_tests() {
     local specific_test="$1"
@@ -250,11 +340,14 @@ run_tests() {
             select_all) test_select_all ;;
             toggle_select_all) test_toggle_select_all ;;
             escape) test_escape ;;
+            cli_single) test_cli_single ;;
+            cli_all) test_cli_all ;;
+            cli_json) test_cli_json ;;
             unit) unit_tests ;;
             build) build ;;
             *)
                 echo "Unknown test: $specific_test"
-                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, tab_focus, select_all, toggle_select_all, escape, unit, build"
+                echo "Available: startup, browser_data, navigation, browser_switch, search, number, ctrl_number, slash, tab_focus, select_all, toggle_select_all, escape, cli_single, cli_all, cli_json, unit, build"
                 exit 1
                 ;;
         esac
@@ -279,6 +372,14 @@ run_tests() {
         test_select_all
         test_toggle_select_all
         test_escape
+
+        echo ""
+        log_info "Running CLI stdout tests..."
+        echo ""
+
+        test_cli_single
+        test_cli_all
+        test_cli_json
     fi
 }
 
