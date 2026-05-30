@@ -270,4 +270,56 @@ struct PickerViewModelTests {
         viewModel.toggleSelectAll()
         #expect(viewModel.selectedTabs.isEmpty)
     }
+
+    @Test("Quick-select follows display order when grouped, not browser order")
+    @MainActor
+    func quickSelectFollowsGroupedOrder() {
+        let viewModel = PickerViewModel()
+        // Browser order interleaves the three github tabs with a solo tab.
+        // Grouping pulls the github tabs together, ahead of solo.com.
+        let tabs = [
+            TabInfo(index: 1, title: "gh1",  url: URL(string: "https://github.com/1")!, isActive: false),
+            TabInfo(index: 2, title: "solo", url: URL(string: "https://solo.com/x")!, isActive: false),
+            TabInfo(index: 3, title: "gh2",  url: URL(string: "https://github.com/2")!, isActive: false),
+            TabInfo(index: 4, title: "gh3",  url: URL(string: "https://github.com/3")!, isActive: true)
+        ]
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+        viewModel.isGroupingEnabled = true
+
+        #expect(viewModel.displayedTabs.map { $0.title } == ["gh1", "gh2", "gh3", "solo"])
+        #expect(viewModel.filteredTabs.map { $0.title } == ["gh1", "solo", "gh2", "gh3"])
+
+        // The digit "2" sits beside gh2 on screen, so Ctrl+2 must copy gh2, not solo.
+        #expect(viewModel.quickSelectTab(2)?.title == "gh2")
+        #expect(viewModel.quickSelectTab(4)?.title == "solo")
+        #expect(viewModel.quickSelectTab(5) == nil)
+    }
+
+    @Test("Quick-select matches browser order when ungrouped")
+    @MainActor
+    func quickSelectMatchesFilteredWhenUngrouped() {
+        let viewModel = PickerViewModel()
+        let tabs = Self.makeTabs(["Tab 1", "Tab 2", "Tab 3"])
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+
+        #expect(viewModel.displayedTabs == viewModel.filteredTabs)
+        #expect(viewModel.quickSelectTab(1)?.title == "Tab 1")
+    }
+
+    @Test("Quick-select skips group headers")
+    @MainActor
+    func quickSelectSkipsGroupHeaders() {
+        let viewModel = PickerViewModel()
+        let tabs = [
+            TabInfo(index: 1, title: "gh1", url: URL(string: "https://github.com/1")!, isActive: false),
+            TabInfo(index: 2, title: "gh2", url: URL(string: "https://github.com/2")!, isActive: false),
+            TabInfo(index: 3, title: "gh3", url: URL(string: "https://github.com/3")!, isActive: false)
+        ]
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+        viewModel.isGroupingEnabled = true
+
+        #expect(viewModel.displayItems.contains { $0.isGroupHeader })
+        #expect(viewModel.displayedTabs.count == 3)
+        #expect(viewModel.quickSelectTab(1)?.title == "gh1")
+    }
 }

@@ -385,9 +385,7 @@ struct PickerView: View {
         if hasCtrl,
            let number = Int(char),
            number >= 1 && number <= 9 {
-            let index = number - 1
-            if index < viewModel.filteredTabs.count {
-                let tab = viewModel.filteredTabs[index]
+            if let tab = viewModel.quickSelectTab(number) {
                 viewModel.copyAndDismiss(tab: tab)
                 onDismiss(true)  // Success
             }
@@ -443,9 +441,7 @@ struct PickerView: View {
 
         // 1-9 for quick tab selection
         if let number = Int(char), number >= 1 && number <= 9, !hasModifier {
-            let index = number - 1
-            if index < viewModel.filteredTabs.count {
-                let tab = viewModel.filteredTabs[index]
+            if let tab = viewModel.quickSelectTab(number) {
                 viewModel.copyAndDismiss(tab: tab)
                 onDismiss(true)  // Success
             }

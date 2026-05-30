@@ -259,6 +259,22 @@ class PickerViewModel: ObservableObject {
         highlightedDisplayItem?.asTab
     }
 
+    /// Tabs in display order, excluding group headers. A tab's position (plus one)
+    /// is its quick-select number — the digit shown beside it and the tab that
+    /// Ctrl+N / N copies — so the visible number always matches the shortcut,
+    /// grouped or not.
+    var displayedTabs: [TabInfo] {
+        displayItems.compactMap { $0.asTab }
+    }
+
+    /// The tab that quick-select number `number` (1-9) copies, or nil if no tab
+    /// holds it. Resolves through display order, so it matches the on-screen digit.
+    func quickSelectTab(_ number: Int) -> TabInfo? {
+        let index = number - 1
+        guard index >= 0, index < displayedTabs.count else { return nil }
+        return displayedTabs[index]
+    }
+
     /// Builds the flat list of display items
     private func buildDisplayItems() -> [DisplayItem] {
         let tabs = filteredTabs

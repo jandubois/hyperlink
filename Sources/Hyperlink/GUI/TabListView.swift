@@ -149,12 +149,13 @@ struct TabListView: View {
 
     var body: some View {
         let items = viewModel.displayItems
+        let shortcutNumbers = quickSelectNumbers(for: items)
 
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        displayItemView(item: item, index: index)
+                        displayItemView(item: item, index: index, shortcutNumber: shortcutNumbers[index])
                             .id(item.id)
                     }
                 }
@@ -184,9 +185,27 @@ struct TabListView: View {
         }
     }
 
+    /// Quick-select numbers (1-9) for the first nine tabs in display order; nil
+    /// for group headers and for tabs past nine. One entry per display item,
+    /// aligned by index, matching PickerViewModel.displayedTabs so the shown
+    /// digit equals the Ctrl+N / N shortcut that copies the tab.
+    private func quickSelectNumbers(for items: [PickerViewModel.DisplayItem]) -> [Int?] {
+        var numbers: [Int?] = []
+        var tabOrdinal = 0
+        for item in items {
+            if item.asTab != nil {
+                numbers.append(tabOrdinal < 9 ? tabOrdinal + 1 : nil)
+                tabOrdinal += 1
+            } else {
+                numbers.append(nil)
+            }
+        }
+        return numbers
+    }
+
     /// Renders a single display item (either group header or tab row)
     @ViewBuilder
-    private func displayItemView(item: PickerViewModel.DisplayItem, index: Int) -> some View {
+    private func displayItemView(item: PickerViewModel.DisplayItem, index: Int, shortcutNumber: Int?) -> some View {
         switch item {
         case .groupHeader(let group, let indentLevel):
             GroupHeaderView(
@@ -200,16 +219,16 @@ struct TabListView: View {
                 onToggleSelection: { viewModel.toggleGroupSelection(group) }
             )
         case .tab(let tab, let indentLevel):
-            tabRowView(tab: tab, index: index, indentLevel: indentLevel)
+            tabRowView(tab: tab, index: index, indentLevel: indentLevel, shortcutNumber: shortcutNumber)
         }
     }
 
     /// Single tab row with indentation
     @ViewBuilder
-    private func tabRowView(tab: TabInfo, index: Int, indentLevel: Int) -> some View {
+    private func tabRowView(tab: TabInfo, index: Int, indentLevel: Int, shortcutNumber: Int?) -> some View {
         TabRowView(
             tab: tab,
-            index: index,
+            shortcutNumber: shortcutNumber,
             isHighlighted: highlightedIndex == index,
             isChecked: isTabSelected(tab),
             isPinned: isTabPinned(tab),
@@ -425,7 +444,7 @@ struct GroupHeaderView: View {
 /// Individual tab row
 struct TabRowView: View {
     let tab: TabInfo
-    let index: Int
+    let shortcutNumber: Int?
     let isHighlighted: Bool
     let isChecked: Bool
     var isPinned: Bool = false
@@ -446,9 +465,9 @@ struct TabRowView: View {
             }
             .buttonStyle(.plain)
 
-            // Number shortcut (1-9)
-            if index < 9 {
-                Text("\(index + 1)")
+            // Quick-select shortcut number (1-9)
+            if let shortcutNumber {
+                Text("\(shortcutNumber)")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(.secondary)
                     .frame(width: 16)
