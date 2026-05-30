@@ -49,16 +49,10 @@ class PickerViewModel: ObservableObject {
         set { sortAscendings[selectedBrowserIndex] = newValue }
     }
 
-    /// Whether grouping is enabled for the selected browser
-    /// Auto-enables when there are more than 12 filtered tabs
+    /// Whether grouping is enabled for the selected browser.
+    /// Defaults to off so the list always starts ungrouped; toggle with Ctrl+G.
     var isGroupingEnabled: Bool {
-        get {
-            if let explicit = groupingEnabled[selectedBrowserIndex] {
-                return explicit
-            }
-            // Auto-enable for >12 items
-            return filteredTabs.count > 12
-        }
+        get { groupingEnabled[selectedBrowserIndex] ?? false }
         set { groupingEnabled[selectedBrowserIndex] = newValue }
     }
 

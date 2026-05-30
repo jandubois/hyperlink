@@ -29,6 +29,18 @@ struct PickerViewModelTests {
         )
     }
 
+    @Test("Grouping defaults to off regardless of tab count")
+    @MainActor
+    func groupingDefaultsOff() {
+        let viewModel = PickerViewModel()
+        // Use enough tabs that any count-based auto-grouping would trigger.
+        let tabs = Self.makeTabs((1...15).map { "Tab \($0)" })
+        viewModel.browsers = [Self.makeBrowserData(name: "Safari", windows: [Self.makeWindow(tabs: tabs)])]
+
+        #expect(viewModel.filteredTabs.count == 15)
+        #expect(viewModel.isGroupingEnabled == false)
+    }
+
     @Test("moveHighlight wraps forward")
     @MainActor
     func moveHighlightWrapsForward() {
