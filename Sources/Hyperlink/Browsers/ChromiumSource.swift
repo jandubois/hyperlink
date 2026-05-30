@@ -37,6 +37,29 @@ struct ChromiumSource: LinkSource {
     }
 
     func windowsSync() throws -> [WindowInfo] {
+        try windowsSync(includePinnedCounts: true)
+    }
+
+    /// Fetch only the active tab of the front window with a single lightweight
+    /// query, skipping full tab enumeration and pinned-tab loading.
+    func activeTabSync() throws -> TabInfo? {
+        guard isRunning else {
+            throw LinkSourceError.browserNotRunning(name)
+        }
+
+        let script = """
+            tell application "\(appName)"
+                if (count of windows) is 0 then return ""
+                set theWindow to front window
+                set theTab to active tab of theWindow
+                return ((active tab index of theWindow) as text) & linefeed & (URL of theTab) & linefeed & (title of theTab)
+            end tell
+            """
+
+        return TabInfo(activeTabResult: try AppleScriptRunner.run(script))
+    }
+
+    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -45,7 +68,7 @@ struct ChromiumSource: LinkSource {
         // Note: For accurate per-profile counts, use instancesSync() instead
         // This simplified approach assigns total pinned count to window 1
         var pinnedCounts: [Int: Int] = [:]
-        if let browserPath = browserDataPath {
+        if includePinnedCounts, let browserPath = browserDataPath {
             var totalPinned = 0
             let profileDirs = findProfileDirectories(in: browserPath)
             for profileDir in profileDirs {

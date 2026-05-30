@@ -12,6 +12,23 @@ struct TabInfo: Sendable, Codable, Hashable {
     }
 }
 
+extension TabInfo {
+    /// Parse the active-tab fast-path AppleScript result.
+    /// Format is "<index>\n<URL>\n<title>". A URL never contains a newline,
+    /// so the title (which may contain newlines) is everything after the second.
+    init?(activeTabResult result: String) {
+        guard !result.isEmpty else { return nil }
+        let parts = result.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count >= 2,
+              let index = Int(parts[0].trimmingCharacters(in: .whitespaces)),
+              let url = URL(string: String(parts[1])) else {
+            return nil
+        }
+        let title = parts.count >= 3 ? String(parts[2]) : ""
+        self.init(index: index, title: title.isEmpty ? url.absoluteString : title, url: url, isActive: true)
+    }
+}
+
 /// Information about a browser window
 struct WindowInfo: Sendable, Codable {
     let index: Int
@@ -87,6 +104,16 @@ protocol LinkSource: Sendable {
     /// Fetch all windows and tabs from this source (synchronous)
     func windowsSync() throws -> [WindowInfo]
 
+    /// Fetch all windows and tabs, optionally skipping the pinned-tab count.
+    /// Computing pinned counts can be expensive (Safari uses slow accessibility
+    /// scripting), so callers that don't need them pass `false`.
+    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo]
+
+    /// Fetch only the active tab of the frontmost window.
+    /// Browser sources override this with a lightweight query that avoids
+    /// enumerating every tab and computing pinned counts.
+    func activeTabSync() throws -> TabInfo?
+
     /// Fetch all windows and tabs from this source (async wrapper)
     func windows() async throws -> [WindowInfo]
 
@@ -110,6 +137,17 @@ extension LinkSource {
         NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == bundleIdentifier
         }
+    }
+
+    // Sources with no pinned-tab cost ignore the flag.
+    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
+        try windowsSync()
+    }
+
+    // Default derives the active tab from a full window fetch.
+    func activeTabSync() throws -> TabInfo? {
+        let windows = try windowsSync()
+        return windows.first?.activeTab ?? windows.first?.tabs.first
     }
 
     // Default async implementation calls the sync method

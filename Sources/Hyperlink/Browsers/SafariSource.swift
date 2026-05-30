@@ -6,12 +6,35 @@ struct SafariSource: LinkSource {
     let bundleIdentifier = "com.apple.Safari"
 
     func windowsSync() throws -> [WindowInfo] {
+        try windowsSync(includePinnedCounts: true)
+    }
+
+    /// Fetch only the active tab of the front window with a single lightweight
+    /// query, skipping full tab enumeration and the slow pinned-tab count.
+    func activeTabSync() throws -> TabInfo? {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
 
-        // Get pinned tab counts per window via UI scripting
-        let pinnedCounts = loadPinnedTabCounts()
+        let script = """
+            tell application "Safari"
+                if (count of windows) is 0 then return ""
+                set theTab to current tab of front window
+                return (index of theTab as text) & linefeed & (URL of theTab) & linefeed & (name of theTab)
+            end tell
+            """
+
+        return TabInfo(activeTabResult: try AppleScriptRunner.run(script))
+    }
+
+    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
+        guard isRunning else {
+            throw LinkSourceError.browserNotRunning(name)
+        }
+
+        // Pinned tab counts require slow accessibility scripting; only pay for
+        // them when the caller needs them.
+        let pinnedCounts = includePinnedCounts ? loadPinnedTabCounts() : [:]
 
         // AppleScript that outputs JSON for easier parsing
         let script = """

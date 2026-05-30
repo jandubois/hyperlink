@@ -212,30 +212,36 @@ struct Hyperlink: ParsableCommand {
             }
         }
 
-        // Fetch windows and tabs
-        let windows: [WindowInfo]
-        do {
-            windows = try source.windowsSync()
-        } catch let error as LinkSourceError {
-            fputs("Error: \(error.description)\n", stderr)
-            switch error {
-            case .permissionDenied:
-                throw ExitCode(3)
-            default:
-                throw ExitCode(1)
-            }
-        }
-
         // Handle tab selection (default to "active")
         let tabSpec = (tab ?? "active").lowercased()
-        switch tabSpec {
-        case "active":
-            guard let activeTab = windows.first?.activeTab ?? windows.first?.tabs.first else {
+
+        // The active tab has a fast path that avoids enumerating every tab and
+        // computing pinned-tab counts.
+        if tabSpec == "active" {
+            let activeTab: TabInfo?
+            do {
+                activeTab = try source.activeTabSync()
+            } catch let error as LinkSourceError {
+                try reportAndExit(error)
+            }
+            guard let activeTab else {
                 fputs("Error: No active tab found\n", stderr)
                 throw ExitCode(1)
             }
             try outputTab(activeTab, source: source, pasteMode: pasteMode)
+            return
+        }
 
+        // Pinned counts are only needed when listing all tabs as JSON.
+        let includePinnedCounts = tabSpec == "all" && format == .json
+        let windows: [WindowInfo]
+        do {
+            windows = try source.windowsSync(includePinnedCounts: includePinnedCounts)
+        } catch let error as LinkSourceError {
+            try reportAndExit(error)
+        }
+
+        switch tabSpec {
         case "all":
             let allTabs = windows.flatMap { $0.tabs }
             if allTabs.isEmpty {
@@ -259,6 +265,15 @@ struct Hyperlink: ParsableCommand {
             let selectedTab = allTabs[index - 1]
             try outputTab(selectedTab, source: source, pasteMode: pasteMode)
         }
+    }
+
+    /// Print a link-source error and exit with the matching code.
+    private func reportAndExit(_ error: LinkSourceError) throws -> Never {
+        fputs("Error: \(error.description)\n", stderr)
+        if case .permissionDenied = error {
+            throw ExitCode(3)
+        }
+        throw ExitCode(1)
     }
 
     private func outputTab(_ tab: TabInfo, source: any LinkSource, pasteMode: Bool) throws {

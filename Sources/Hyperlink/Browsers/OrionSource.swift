@@ -74,6 +74,24 @@ struct OrionSource: LinkSource {
         return try parseJSON(result)
     }
 
+    /// Fetch only the active tab of the front window with a single lightweight
+    /// query, skipping full tab enumeration.
+    func activeTabSync() throws -> TabInfo? {
+        guard isRunning else {
+            throw LinkSourceError.browserNotRunning(name)
+        }
+
+        let script = """
+            tell application "Orion"
+                if (count of windows) is 0 then return ""
+                set theTab to current tab of front window
+                return (index of theTab as text) & linefeed & (URL of theTab) & linefeed & (name of theTab)
+            end tell
+            """
+
+        return TabInfo(activeTabResult: try AppleScriptRunner.run(script))
+    }
+
     private func parseJSON(_ jsonString: String) throws -> [WindowInfo] {
         guard let data = jsonString.data(using: .utf8) else {
             throw LinkSourceError.scriptError("Invalid JSON encoding")
