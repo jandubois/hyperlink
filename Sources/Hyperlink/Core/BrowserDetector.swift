@@ -88,13 +88,15 @@ enum BrowserDetector {
 
     /// Get the frontmost browser, if any
     static func frontmostBrowser() -> KnownBrowser? {
-        if let frontmost = NSWorkspace.shared.frontmostApplication,
-           let bundleId = frontmost.bundleIdentifier,
-           let browser = KnownBrowser.allCases.first(where: { $0.rawValue == bundleId }) {
+        // Walk the on-screen windows in z-order and return the first recognized
+        // browser. This finds the topmost browser even when the caller itself
+        // (e.g. a terminal) is frontmost.
+        if let browser = detectFrontmostBrowser() {
             return browser
         }
 
-        // If frontmost app isn't a browser, return the first running browser
+        // No browser window is on the active Space (all minimized, or on
+        // another Space); fall back to any running browser.
         return runningBrowsers().first
     }
 
