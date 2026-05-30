@@ -6,7 +6,7 @@ struct OrionSource: LinkSource {
     let name = "Orion"
     let bundleIdentifier = "com.kagi.kagimacOS"
 
-    func windowsSync() throws -> [WindowInfo] {
+    func loadWindows(includePinnedCounts: Bool) throws -> LoadResult {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -71,7 +71,8 @@ struct OrionSource: LinkSource {
             """
 
         let result = try AppleScriptRunner.run(script)
-        return try parseJSON(result)
+        // Orion exposes no pinned-tab state, so there is no warning to raise.
+        return LoadResult(windows: try parseJSON(result))
     }
 
     /// Fetch only the active tab of the front window with a single lightweight

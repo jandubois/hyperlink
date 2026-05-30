@@ -59,11 +59,57 @@ struct WindowInfo: Sendable, Codable {
     }
 }
 
+/// A non-fatal problem encountered while loading tabs. The tabs still load;
+/// some derived data (e.g. pinned-tab marking) is missing.
+enum SourceWarning: Sendable {
+    case permissionDenied
+    case pinnedQueryFailed(String)  // detail for logging; message() is user-facing
+
+    /// Short, user-facing description for a toast.
+    var message: String {
+        switch self {
+        case .permissionDenied:
+            return "Pinned tabs need Accessibility permission"
+        case .pinnedQueryFailed:
+            return "Couldn't detect pinned tabs"
+        }
+    }
+
+    /// Longer description including the underlying cause, for stderr and logs.
+    var detail: String {
+        switch self {
+        case .permissionDenied:
+            return message
+        case .pinnedQueryFailed(let cause):
+            return "\(message): \(cause)"
+        }
+    }
+}
+
+/// The windows from a source, plus any non-fatal warning raised while loading.
+struct LoadResult: Sendable {
+    let windows: [WindowInfo]
+    let warning: SourceWarning?
+
+    init(windows: [WindowInfo], warning: SourceWarning? = nil) {
+        self.windows = windows
+        self.warning = warning
+    }
+}
+
 /// Information about a browser instance (may represent a profile)
 struct BrowserInstance: Sendable {
     let source: any LinkSource
     let profileName: String?
     let windows: [WindowInfo]
+    let warning: SourceWarning?
+
+    init(source: any LinkSource, profileName: String?, windows: [WindowInfo], warning: SourceWarning? = nil) {
+        self.source = source
+        self.profileName = profileName
+        self.windows = windows
+        self.warning = warning
+    }
 
     var displayName: String {
         if let profileName {
@@ -101,13 +147,12 @@ protocol LinkSource: Sendable {
     /// Whether the source application is currently running
     var isRunning: Bool { get }
 
-    /// Fetch all windows and tabs from this source (synchronous)
-    func windowsSync() throws -> [WindowInfo]
-
-    /// Fetch all windows and tabs, optionally skipping the pinned-tab count.
+    /// Fetch all windows and tabs, plus any non-fatal warning.
     /// Computing pinned counts can be expensive (Safari uses slow accessibility
-    /// scripting), so callers that don't need them pass `false`.
-    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo]
+    /// scripting), so callers that don't need them pass `false`. A failure to
+    /// load pinned counts is reported as a warning, not thrown: the tabs still
+    /// load.
+    func loadWindows(includePinnedCounts: Bool) throws -> LoadResult
 
     /// Fetch only the active tab of the frontmost window.
     /// Browser sources override this with a lightweight query that avoids
@@ -139,9 +184,16 @@ extension LinkSource {
         }
     }
 
-    // Sources with no pinned-tab cost ignore the flag.
+    /// Fetch all windows and tabs, discarding any warning. Convenience for
+    /// callers (CLI, mock) that don't surface warnings.
+    func windowsSync() throws -> [WindowInfo] {
+        try loadWindows(includePinnedCounts: true).windows
+    }
+
+    /// Fetch all windows and tabs with pinned counts optional, discarding any
+    /// warning.
     func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
-        try windowsSync()
+        try loadWindows(includePinnedCounts: includePinnedCounts).windows
     }
 
     // Default derives the active tab from a full window fetch.
@@ -155,10 +207,11 @@ extension LinkSource {
         try windowsSync()
     }
 
-    // Default sync implementation for sources that don't support profiles
+    // Default sync implementation for sources that don't support profiles.
+    // Carries any load warning through to the single instance.
     func instancesSync() throws -> [BrowserInstance] {
-        let windows = try windowsSync()
-        return [BrowserInstance(source: self, profileName: nil, windows: windows)]
+        let result = try loadWindows(includePinnedCounts: true)
+        return [BrowserInstance(source: self, profileName: nil, windows: result.windows, warning: result.warning)]
     }
 
     // Default async implementation for sources that don't support profiles

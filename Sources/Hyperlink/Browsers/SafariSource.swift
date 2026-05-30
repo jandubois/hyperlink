@@ -5,10 +5,6 @@ struct SafariSource: LinkSource {
     let name = "Safari"
     let bundleIdentifier = "com.apple.Safari"
 
-    func windowsSync() throws -> [WindowInfo] {
-        try windowsSync(includePinnedCounts: true)
-    }
-
     /// Fetch only the active tab of the front window with a single lightweight
     /// query, skipping full tab enumeration and the slow pinned-tab count.
     func activeTabSync() throws -> TabInfo? {
@@ -27,14 +23,26 @@ struct SafariSource: LinkSource {
         return TabInfo(activeTabResult: try AppleScriptRunner.run(script))
     }
 
-    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
+    func loadWindows(includePinnedCounts: Bool) throws -> LoadResult {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
 
         // Pinned tab counts require slow accessibility scripting; only pay for
-        // them when the caller needs them.
-        let pinnedCounts = includePinnedCounts ? loadPinnedTabCounts() : [:]
+        // them when the caller needs them. A failure here is non-fatal: report
+        // it as a warning and leave tabs unmarked.
+        var pinnedCounts: [Int: Int] = [:]
+        var warning: SourceWarning?
+        if includePinnedCounts {
+            switch loadPinnedTabCounts() {
+            case .success(let counts):
+                pinnedCounts = counts
+            case .permissionDenied:
+                warning = .permissionDenied
+            case .failed(let detail):
+                warning = .pinnedQueryFailed(detail)
+            }
+        }
 
         // AppleScript that outputs JSON for easier parsing
         let script = """
@@ -99,7 +107,7 @@ struct SafariSource: LinkSource {
         let windows = try parseJSON(result)
 
         // Apply pinned counts to windows
-        return windows.map { window in
+        let withPinned = windows.map { window in
             let pinnedCount = pinnedCounts[window.index] ?? 0
             return WindowInfo(
                 index: window.index,
@@ -108,13 +116,22 @@ struct SafariSource: LinkSource {
                 pinnedTabCount: pinnedCount
             )
         }
+        return LoadResult(windows: withPinned, warning: warning)
     }
 
-    /// Get pinned tab counts per window using System Events UI scripting.
-    /// Returns a dictionary mapping window index (1-based) to pinned tab count.
-    private func loadPinnedTabCounts() -> [Int: Int] {
-        // Use System Events to inspect Safari's UI and count pinned tabs
-        // Pinned tabs have description "pinned tab", regular tabs have "tab"
+    /// Outcome of querying Safari's UI for pinned-tab counts.
+    private enum PinnedCountResult {
+        case success([Int: Int])  // window index (1-based) -> pinned count
+        case permissionDenied
+        case failed(String)
+    }
+
+    /// Count pinned tabs per window using System Events UI scripting.
+    /// Pinned tabs carry the accessibility description "pinned tab".
+    /// Unlike the tab data (read via Automation), this needs Accessibility
+    /// permission and depends on Safari's tab-bar UI structure, so it can fail
+    /// independently.
+    private func loadPinnedTabCounts() -> PinnedCountResult {
         let script = """
             tell application "System Events"
                 tell process "Safari"
@@ -123,14 +140,10 @@ struct SafariSource: LinkSource {
 
                     set output to ""
                     repeat with w from 1 to windowCount
-                        try
-                            tell group "tab bar" of window w
-                                set pinnedCount to count of (radio buttons whose description is "pinned tab")
-                                set output to output & pinnedCount
-                            end tell
-                        on error
-                            set output to output & "0"
-                        end try
+                        tell group "tab bar" of window w
+                            set pinnedCount to count of (radio buttons whose description is "pinned tab")
+                            set output to output & pinnedCount
+                        end tell
                         if w < windowCount then set output to output & ","
                     end repeat
                     return output
@@ -138,8 +151,17 @@ struct SafariSource: LinkSource {
             end tell
             """
 
-        guard let result = try? AppleScriptRunner.run(script), !result.isEmpty else {
-            return [:]
+        let result: String
+        do {
+            result = try AppleScriptRunner.run(script)
+        } catch LinkSourceError.permissionDenied {
+            return .permissionDenied
+        } catch {
+            return .failed("\(error)")
+        }
+
+        if result.isEmpty {
+            return .success([:])  // No windows open
         }
 
         // Parse comma-separated counts: "2,0,1" -> {1: 2, 2: 0, 3: 1}
@@ -150,7 +172,7 @@ struct SafariSource: LinkSource {
                 counts[index + 1] = count  // Window indices are 1-based
             }
         }
-        return counts
+        return .success(counts)
     }
 
     private func parseJSON(_ jsonString: String) throws -> [WindowInfo] {

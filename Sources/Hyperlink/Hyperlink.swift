@@ -236,7 +236,12 @@ struct Hyperlink: ParsableCommand {
         let includePinnedCounts = tabSpec == "all" && format == .json
         let windows: [WindowInfo]
         do {
-            windows = try source.windowsSync(includePinnedCounts: includePinnedCounts)
+            let result = try source.loadWindows(includePinnedCounts: includePinnedCounts)
+            windows = result.windows
+            // Non-fatal: tabs still print to stdout; report the cause on stderr.
+            if let warning = result.warning {
+                fputs("Warning: \(warning.detail)\n", stderr)
+            }
         } catch let error as LinkSourceError {
             try reportAndExit(error)
         }

@@ -35,8 +35,8 @@ struct MockLinkSource: LinkSource {
         true
     }
 
-    func windowsSync() throws -> [WindowInfo] {
-        mockWindows
+    func loadWindows(includePinnedCounts: Bool) throws -> LoadResult {
+        LoadResult(windows: mockWindows)
     }
 }
 

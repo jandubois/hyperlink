@@ -600,6 +600,7 @@ class PickerViewModel: ObservableObject {
         // Phase 1: Load browsers until we have tabs to display
         var browserDataList: [BrowserData] = []
         var lastError: Error?
+        var loadWarning: SourceWarning?
         var loadedCount = 0
 
         for browser in runningBrowsers {
@@ -613,6 +614,7 @@ class PickerViewModel: ObservableObject {
                             icon: instance.icon,
                             windows: instance.windows
                         ))
+                        if loadWarning == nil { loadWarning = instance.warning }
                     }
                 }
             } catch let error as LinkSourceError {
@@ -653,6 +655,11 @@ class PickerViewModel: ObservableObject {
         }
 
         isLoading = false
+
+        // Surface any non-fatal load warning (e.g. pinned tabs undetectable)
+        if let loadWarning {
+            showToast(loadWarning.message)
+        }
 
         // Phase 2: Load remaining browsers in the background
         let remaining = Array(runningBrowsers.dropFirst(loadedCount))

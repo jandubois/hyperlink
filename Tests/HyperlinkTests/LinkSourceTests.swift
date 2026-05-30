@@ -4,6 +4,42 @@ import Foundation
 
 @Suite("LinkSource Tests")
 struct LinkSourceTests {
+    @Test("Source warnings have distinct user-facing messages")
+    func sourceWarningMessages() {
+        #expect(SourceWarning.permissionDenied.message == "Pinned tabs need Accessibility permission")
+        #expect(SourceWarning.pinnedQueryFailed("detail").message == "Couldn't detect pinned tabs")
+    }
+
+    @Test("pinnedQueryFailed detail appends the underlying cause")
+    func sourceWarningDetailIncludesCause() {
+        let warning = SourceWarning.pinnedQueryFailed("error -1728")
+        #expect(warning.detail == "Couldn't detect pinned tabs: error -1728")
+        // permissionDenied has no extra cause, so detail matches message.
+        #expect(SourceWarning.permissionDenied.detail == SourceWarning.permissionDenied.message)
+    }
+
+    @Test("MockLinkSource loads windows with no warning")
+    func mockLoadsWithoutWarning() throws {
+        let tab = TabInfo(index: 1, title: "T", url: URL(string: "https://example.com")!, isActive: true)
+        let source = MockLinkSource(name: "Safari", windows: [WindowInfo(index: 1, name: nil, tabs: [tab])])
+
+        let result = try source.loadWindows(includePinnedCounts: true)
+        #expect(result.windows.count == 1)
+        #expect(result.warning == nil)
+    }
+
+    @Test("instancesSync carries the load warning onto the instance")
+    func instancesCarryWarning() throws {
+        // The default instancesSync wraps loadWindows; a warningless source
+        // produces a warningless instance.
+        let tab = TabInfo(index: 1, title: "T", url: URL(string: "https://example.com")!, isActive: true)
+        let source = MockLinkSource(name: "Safari", windows: [WindowInfo(index: 1, name: nil, tabs: [tab])])
+
+        let instances = try source.instancesSync()
+        #expect(instances.count == 1)
+        #expect(instances.first?.warning == nil)
+    }
+
     @Test("Active-tab result parses index, URL, and title")
     func activeTabResultParses() {
         let tab = TabInfo(activeTabResult: "2\nhttps://example.com\nExample Title")

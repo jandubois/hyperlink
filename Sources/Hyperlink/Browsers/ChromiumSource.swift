@@ -36,10 +36,6 @@ struct ChromiumSource: LinkSource {
         }
     }
 
-    func windowsSync() throws -> [WindowInfo] {
-        try windowsSync(includePinnedCounts: true)
-    }
-
     /// Fetch only the active tab of the front window with a single lightweight
     /// query, skipping full tab enumeration and pinned-tab loading.
     func activeTabSync() throws -> TabInfo? {
@@ -59,7 +55,7 @@ struct ChromiumSource: LinkSource {
         return TabInfo(activeTabResult: try AppleScriptRunner.run(script))
     }
 
-    func windowsSync(includePinnedCounts: Bool) throws -> [WindowInfo] {
+    func loadWindows(includePinnedCounts: Bool) throws -> LoadResult {
         guard isRunning else {
             throw LinkSourceError.browserNotRunning(name)
         }
@@ -141,7 +137,9 @@ struct ChromiumSource: LinkSource {
             """
 
         let result = try AppleScriptRunner.run(script)
-        return try parseJSON(result, pinnedCounts: pinnedCounts)
+        // Chromium reads pinned state from the on-disk session file, not from
+        // accessibility scripting, so it raises no pinned-detection warning.
+        return LoadResult(windows: try parseJSON(result, pinnedCounts: pinnedCounts))
     }
 
     private func parseJSON(_ jsonString: String, pinnedCounts: [Int: Int]) throws -> [WindowInfo] {
