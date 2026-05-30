@@ -394,7 +394,8 @@ struct PickerView: View {
             return true
         }
 
-        // Ctrl+o/t/u set sort order; Ctrl+s flips direction; Ctrl+g toggles grouping (always works)
+        // Ctrl+o/t/u set sort order; Ctrl+s flips direction; Ctrl+g toggles grouping;
+        // Ctrl+a toggles select all (always works)
         if hasCtrl, !hasCmd {
             switch char {
             case "o":
@@ -411,6 +412,9 @@ struct PickerView: View {
                 return true
             case "g":
                 viewModel.isGroupingEnabled.toggle()
+                return true
+            case "a":
+                viewModel.toggleSelectAll()
                 return true
             default:
                 break
